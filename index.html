@@ -2,10 +2,10 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Catálogo Eléctrico</title>
+  <title>Catálogo Eléctrico Avanzado</title>
   <style>
     body { display:flex; margin:0; font-family:sans-serif; height:100vh; }
-    #sidebar { width:260px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; }
+    #sidebar { width:280px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
     #canvas-container { flex:1; }
     label { display:block; margin:5px 0 2px; }
     select, input, button { width:100%; padding:5px; margin-bottom:10px; }
@@ -21,11 +21,9 @@
       <option value="interruptor">Interruptor</option>
       <option value="fusible">Fusible</option>
       <option value="contactor">Contactor</option>
-      <option value="cable">Cable</option>
     </select>
 
     <div id="config"></div>
-
     <button id="btnInsert">Seleccionar</button>
   </div>
 
@@ -37,19 +35,19 @@
   <script>
     const canvas = new fabric.Canvas('c');
 
-    // Catálogo con ejemplos (podría venir de un JSON externo o Google Sheets)
+    // Catálogo de componentes (demo)
     const catalogo = {
       interruptor: [
-        { part:"ABB-S202", tipo:"Riel DIN", frame:"150A", polos:"2P", icu:"10kA", icon:"icons/interruptor_din.png" },
-        { part:"ABB-TMAX250", tipo:"Caja Moldeada", frame:"250A", polos:"3P", icu:"25kA", icon:"icons/interruptor_mccb.png" }
+        { part:"ABB-S202", tipo:"Riel DIN", frame:"150A", polos:"2P", icu:"10kA", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048941.png" },
+        { part:"ABB-TMAX250", tipo:"Caja Moldeada", frame:"250A", polos:"3P", icu:"25kA", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048932.png" }
       ],
       fusible: [
-        { part:"NH-63A", tipo:"NH", amp:"63A", icon:"icons/fusible_nh.png" },
-        { part:"CIL-10A", tipo:"Cilíndrico", amp:"10A", icon:"icons/fusible_cilindrico.png" }
+        { part:"NH-63A", tipo:"NH", amp:"63A", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048975.png" },
+        { part:"CIL-10A", tipo:"Cilíndrico", amp:"10A", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048973.png" }
       ],
       contactor: [
-        { part:"LC1D09", amp:"9A", bobina:"220V AC", icon:"icons/contactor.png" },
-        { part:"LC1D25", amp:"25A", bobina:"24V DC", icon:"icons/contactor.png" }
+        { part:"LC1D09", amp:"9A", bobina:"220V AC", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048960.png" },
+        { part:"LC1D25", amp:"25A", bobina:"24V DC", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048961.png" }
       ]
     };
 
@@ -57,41 +55,83 @@
     const configDiv = document.getElementById("config");
     let seleccion = null;
 
-    // Cargar configuraciones dinámicamente
-    tipoSelect.addEventListener("change", () => {
-      configDiv.innerHTML = "";
-      const tipo = tipoSelect.value;
-      if (!tipo) return;
+    // Genera selects dinámicos según tipo
+    function generarCampos(tipo) {
       const opciones = catalogo[tipo];
       if (!opciones) return;
 
-      // PartNumber desplegable
       let html = `<label>Part Number</label>
-                  <select id="partSel">`;
+                  <select id="partSel">
+                    <option value="">-- Elegir --</option>`;
       opciones.forEach(opt => {
         html += `<option value="${opt.part}">${opt.part}</option>`;
       });
       html += `</select>`;
 
+      // Campos dinámicos según propiedades
+      const props = Object.keys(opciones[0]).filter(k => !["part","icon"].includes(k));
+      props.forEach(p => {
+        html += `<label>${p}</label><select id="${p}Sel"><option value="">--</option>`;
+        [...new Set(opciones.map(o => o[p]))].forEach(val => {
+          html += `<option value="${val}">${val}</option>`;
+        });
+        html += `</select>`;
+      });
+
       configDiv.innerHTML = html;
 
-      // Guardar selección inicial
-      seleccion = opciones[0];
-
-      // Escuchar cambios en partNumber
+      // Listeners
       document.getElementById("partSel").addEventListener("change", e => {
-        seleccion = opciones.find(o => o.part === e.target.value);
+        const val = e.target.value;
+        if (val) {
+          seleccion = opciones.find(o => o.part === val);
+          // autocompletar propiedades
+          props.forEach(p => document.getElementById(p+"Sel").value = seleccion[p] || "");
+        }
       });
+
+      props.forEach(p => {
+        document.getElementById(p+"Sel").addEventListener("change", () => {
+          const filtros = {};
+          props.forEach(pp => {
+            const v = document.getElementById(pp+"Sel").value;
+            if (v) filtros[pp] = v;
+          });
+          const filtrados = opciones.filter(o => Object.entries(filtros).every(([k,v]) => o[k]===v));
+          if (filtrados.length === 1) {
+            seleccion = filtrados[0];
+            document.getElementById("partSel").value = seleccion.part;
+          }
+        });
+      });
+    }
+
+    tipoSelect.addEventListener("change", () => {
+      configDiv.innerHTML = "";
+      seleccion = null;
+      if (tipoSelect.value) generarCampos(tipoSelect.value);
     });
 
-    // Insertar en canvas
+    // Insertar icono en canvas
     document.getElementById("btnInsert").addEventListener("click", () => {
-      if (!seleccion) return alert("Seleccione un componente");
+      if (!seleccion) return alert("Seleccione un componente completo");
       fabric.Image.fromURL(seleccion.icon, function(img) {
-        img.set({ left:100, top:100, scaleX:0.5, scaleY:0.5 });
-        img.metadata = seleccion; // guardar info para BOM
+        img.set({ left:100, top:100, scaleX:0.3, scaleY:0.3 });
+        img.metadata = seleccion;
         canvas.add(img).setActiveObject(img);
-      });
+      }, { crossOrigin: 'anonymous' });
+    });
+
+    // 🔥 Borrar con tecla Delete
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const active = canvas.getActiveObject();
+        if (active) {
+          canvas.remove(active);
+          canvas.discardActiveObject();
+          canvas.requestRenderAll();
+        }
+      }
     });
   </script>
 </body>
