@@ -5,13 +5,14 @@
   <title>Editor Tablero Eléctrico</title>
   <style>
     body { font-family: Arial, sans-serif; margin:0; display:flex; height:100vh; }
-    #sidebar { width: 220px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
+    #sidebar { width: 240px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
     #canvas-container { flex:1; }
     button { margin-top: 8px; width:100%; padding:6px; }
     .symbol { padding:5px; border:1px solid #999; margin:5px 0; cursor:pointer; background:#fff; text-align:center; }
     #props { margin-top:15px; border-top:1px solid #ccc; padding-top:10px; }
     #props label { display:block; margin:5px 0 2px; }
     #props input, #props select { width:100%; padding:4px; }
+    .prop-group { margin-bottom:8px; }
   </style>
 </head>
 <body>
@@ -28,12 +29,20 @@
     <!-- Panel de propiedades -->
     <div id="props">
       <h4>Propiedades</h4>
-      <label>Part Number</label>
-      <input type="text" id="propPart">
-      <label>Fabricante</label>
-      <input type="text" id="propMfg">
-      <label>Tipo</label>
-      <input type="text" id="propType" disabled>
+      <div class="prop-group">
+        <label>Part Number</label>
+        <input type="text" id="propPart">
+      </div>
+      <div class="prop-group">
+        <label>Fabricante</label>
+        <input type="text" id="propMfg">
+      </div>
+      <div class="prop-group">
+        <label>Tipo</label>
+        <input type="text" id="propType" disabled>
+      </div>
+
+      <!-- Propiedades para cables -->
       <div id="extraCable" style="display:none;">
         <label>Calibre</label>
         <select id="propCalibre">
@@ -49,6 +58,55 @@
           <option value="VERDE">VERDE</option>
         </select>
       </div>
+
+      <!-- Propiedades para interruptores -->
+      <div id="extraInterruptor" style="display:none;">
+        <label>Tipo</label>
+        <select id="propIntTipo">
+          <option value="Riel DIN">Riel DIN</option>
+          <option value="Caja Moldeada">Caja Moldeada</option>
+        </select>
+        <label>Frame</label>
+        <select id="propIntFrame">
+          <option value="150A">150A</option>
+          <option value="250A">250A</option>
+          <option value="400A">400A</option>
+          <option value="600A">600A</option>
+        </select>
+        <label>Polos</label>
+        <select id="propIntPolos">
+          <option value="1P">1P</option>
+          <option value="2P">2P</option>
+          <option value="3P">3P</option>
+          <option value="4P">4P</option>
+        </select>
+        <label>Icu (kA)</label>
+        <input type="number" id="propIntIcu" value="10">
+      </div>
+
+      <!-- Propiedades para fusibles -->
+      <div id="extraFusible" style="display:none;">
+        <label>Corriente nominal (A)</label>
+        <input type="number" id="propFusAmp" value="10">
+        <label>Tipo de portafusible</label>
+        <select id="propFusTipo">
+          <option value="NH">NH</option>
+          <option value="Cilíndrico">Cilíndrico</option>
+        </select>
+      </div>
+
+      <!-- Propiedades para contactores -->
+      <div id="extraContactor" style="display:none;">
+        <label>Corriente nominal (A)</label>
+        <input type="number" id="propContAmp" value="9">
+        <label>Bobina</label>
+        <select id="propContBobina">
+          <option value="220V AC">220V AC</option>
+          <option value="110V AC">110V AC</option>
+          <option value="24V DC">24V DC</option>
+        </select>
+      </div>
+
       <button id="saveProps">Guardar</button>
     </div>
   </div>
@@ -96,6 +154,18 @@
       });
     });
 
+    // Borrar con tecla Delete
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const obj = canvas.getActiveObject();
+        if (obj) {
+          canvas.remove(obj);
+          canvas.discardActiveObject();
+          canvas.renderAll();
+        }
+      }
+    });
+
     // Modo dibujo de cable
     document.getElementById('drawLine').addEventListener('click', () => {
       drawingLine = !drawingLine;
@@ -132,46 +202,85 @@
       const x1 = line.x1, y1 = line.y1, x2 = line.x2, y2 = line.y2;
       const lengthPx = Math.sqrt(Math.pow(x2-x1,2) + Math.pow(y2-y1,2));
       const scale = 0.01; // 1px = 1cm
-      line.metadata.qty = (lengthPx * scale).toFixed(2); // en metros
+      line.metadata.qty = (lengthPx * scale).toFixed(2); // metros
       line = null;
     });
 
     // Selección: cargar propiedades en el panel
     canvas.on('selection:created', loadProps);
     canvas.on('selection:updated', loadProps);
-    canvas.on('selection:cleared', () => {
+    canvas.on('selection:cleared', clearProps);
+
+    function clearProps() {
       activeObj = null;
-      document.getElementById("propPart").value = "";
-      document.getElementById("propMfg").value = "";
-      document.getElementById("propType").value = "";
-      document.getElementById("extraCable").style.display = "none";
-    });
+      document.querySelectorAll("#props input, #props select").forEach(el => el.value = "");
+      document.querySelectorAll("#extraCable, #extraInterruptor, #extraFusible, #extraContactor")
+        .forEach(div => div.style.display = "none");
+    }
 
     function loadProps(e) {
       activeObj = e.selected[0];
-      if (activeObj && activeObj.metadata) {
-        document.getElementById("propPart").value = activeObj.metadata.partNumber || "";
-        document.getElementById("propMfg").value = activeObj.metadata.manufacturer || "";
-        document.getElementById("propType").value = activeObj.metadata.type || "";
-        if (activeObj.metadata.type === "cable") {
-          document.getElementById("extraCable").style.display = "block";
-          document.getElementById("propCalibre").value = activeObj.metadata.calibre;
-          document.getElementById("propColor").value = activeObj.metadata.color;
-        } else {
-          document.getElementById("extraCable").style.display = "none";
-        }
+      if (!activeObj || !activeObj.metadata) return;
+      document.getElementById("propPart").value = activeObj.metadata.partNumber || "";
+      document.getElementById("propMfg").value = activeObj.metadata.manufacturer || "";
+      document.getElementById("propType").value = activeObj.metadata.type || "";
+
+      clearExtras();
+
+      if (activeObj.metadata.type === "cable") {
+        document.getElementById("extraCable").style.display = "block";
+        document.getElementById("propCalibre").value = activeObj.metadata.calibre;
+        document.getElementById("propColor").value = activeObj.metadata.color;
+      }
+      if (activeObj.metadata.type === "interruptor") {
+        document.getElementById("extraInterruptor").style.display = "block";
+        document.getElementById("propIntTipo").value = activeObj.metadata.intTipo || "Riel DIN";
+        document.getElementById("propIntFrame").value = activeObj.metadata.intFrame || "150A";
+        document.getElementById("propIntPolos").value = activeObj.metadata.intPolos || "3P";
+        document.getElementById("propIntIcu").value = activeObj.metadata.intIcu || 10;
+      }
+      if (activeObj.metadata.type === "fusible") {
+        document.getElementById("extraFusible").style.display = "block";
+        document.getElementById("propFusAmp").value = activeObj.metadata.fusAmp || 10;
+        document.getElementById("propFusTipo").value = activeObj.metadata.fusTipo || "NH";
+      }
+      if (activeObj.metadata.type === "contacto") {
+        document.getElementById("extraContactor").style.display = "block";
+        document.getElementById("propContAmp").value = activeObj.metadata.contAmp || 9;
+        document.getElementById("propContBobina").value = activeObj.metadata.contBobina || "220V AC";
       }
     }
 
-    // Guardar cambios desde panel
+    function clearExtras() {
+      document.querySelectorAll("#extraCable, #extraInterruptor, #extraFusible, #extraContactor")
+        .forEach(div => div.style.display = "none");
+    }
+
+    // Guardar cambios
     document.getElementById("saveProps").addEventListener("click", () => {
       if (!activeObj || !activeObj.metadata) return;
       activeObj.metadata.partNumber = document.getElementById("propPart").value;
       activeObj.metadata.manufacturer = document.getElementById("propMfg").value;
+
       if (activeObj.metadata.type === "cable") {
         activeObj.metadata.calibre = document.getElementById("propCalibre").value;
         activeObj.metadata.color = document.getElementById("propColor").value;
       }
+      if (activeObj.metadata.type === "interruptor") {
+        activeObj.metadata.intTipo = document.getElementById("propIntTipo").value;
+        activeObj.metadata.intFrame = document.getElementById("propIntFrame").value;
+        activeObj.metadata.intPolos = document.getElementById("propIntPolos").value;
+        activeObj.metadata.intIcu = document.getElementById("propIntIcu").value;
+      }
+      if (activeObj.metadata.type === "fusible") {
+        activeObj.metadata.fusAmp = document.getElementById("propFusAmp").value;
+        activeObj.metadata.fusTipo = document.getElementById("propFusTipo").value;
+      }
+      if (activeObj.metadata.type === "contacto") {
+        activeObj.metadata.contAmp = document.getElementById("propContAmp").value;
+        activeObj.metadata.contBobina = document.getElementById("propContBobina").value;
+      }
+
       canvas.renderAll();
       alert("Propiedades actualizadas ✅");
     });
@@ -183,18 +292,10 @@
         if (obj.metadata) {
           const key = obj.metadata.partNumber;
           if (!bom[key]) {
-            bom[key] = {
-              partNumber: obj.metadata.partNumber,
-              manufacturer: obj.metadata.manufacturer,
-              type: obj.metadata.type,
-              qty: 0,
-              detalle: ""
-            };
+            bom[key] = { ...obj.metadata, qty: 0 };
           }
           if (obj.metadata.type === "cable") {
-            bom[key].detalle = obj.metadata.calibre + " " + obj.metadata.color;
-            const value = parseFloat(obj.metadata.qty) || 0;
-            bom[key].qty += value;
+            bom[key].qty += parseFloat(obj.metadata.qty) || 0;
           } else {
             bom[key].qty += obj.metadata.qty || 1;
           }
