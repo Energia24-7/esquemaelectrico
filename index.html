@@ -2,59 +2,84 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Catálogo Eléctrico Avanzado</title>
+  <title>Catálogo desde Google Sheets</title>
   <style>
     body { display:flex; margin:0; font-family:sans-serif; height:100vh; }
-    #sidebar { width:280px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
+    #sidebar { width:300px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
     #canvas-container { flex:1; }
-    label { display:block; margin:5px 0 2px; }
-    select, button { width:100%; padding:5px; margin-bottom:10px; }
-    #partSel option[disabled] { color:red; font-weight:bold; }
+    select, button { width:100%; padding:5px; margin:5px 0; }
+    .error { color:red; font-weight:bold; margin-top:5px; }
   </style>
 </head>
 <body>
   <div id="sidebar">
-    <h3>Insertar Componente</h3>
-
+    <h3>Catálogo Eléctrico</h3>
     <label>Tipo</label>
-    <select id="tipo">
-      <option value="">-- Seleccionar --</option>
-      <option value="interruptor">Interruptor</option>
-      <option value="fusible">Fusible</option>
-      <option value="contactor">Contactor</option>
-    </select>
-
+    <select id="tipo"><option value="">-- Seleccionar --</option></select>
     <div id="config"></div>
-    <button id="btnInsert">Seleccionar</button>
+    <button id="btnInsert">Insertar</button>
+    <div id="msg" class="error"></div>
   </div>
 
   <div id="canvas-container">
     <canvas id="c" width="900" height="600" style="border:1px solid #ccc;"></canvas>
   </div>
 
+  <!-- Fabric.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+  <!-- PapaParse -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
   <script>
     const canvas = new fabric.Canvas('c');
+    let catalogo = {}; // Se cargará desde Google Sheets
+    let seleccion = null;
 
-    // Catálogo de componentes (demo)
-    const catalogo = {
-      interruptor: [
-        { part:"ABB-S202", tipo:"Riel DIN", frame:"150A", polos:"2P", icu:"10kA", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048941.png" },
-        { part:"ABB-TMAX250", tipo:"Caja Moldeada", frame:"250A", polos:"3P", icu:"25kA", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048932.png" }
-      ],
-      fusible: [
-        { part:"NH-63A", tipo:"NH", amp:"63A", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048975.png" },
-        { part:"CIL-10A", tipo:"Cilíndrico", amp:"10A", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048973.png" }
-      ],
-      contactor: [
-        { part:"LC1D09", amp:"9A", bobina:"220V AC", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048960.png" },
-        { part:"LC1D25", amp:"25A", bobina:"24V DC", icon:"https://cdn-icons-png.flaticon.com/512/1048/1048961.png" }
-      ]
-    };
+    // URL de Google Sheets en formato CSV
+    const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vXXXXXXX/pub?gid=0&single=true&output=csv";
+
+    // Leer datos con PapaParse
+    Papa.parse(sheetUrl, {
+      download: true,
+      header: true,
+      complete: function(results) {
+        catalogo = procesarCatalogo(results.data);
+        llenarTipos();
+      }
+    });
+
+    function procesarCatalogo(data) {
+      // Agrupar por tipo
+      const obj = {};
+      data.forEach(row => {
+        const tipo = row.tipo.toLowerCase();
+        if (!obj[tipo]) obj[tipo] = [];
+        obj[tipo].push({
+          part: row.part,
+          icon: row.icon,
+          ...row
+        });
+      });
+      return obj;
+    }
+
+    function llenarTipos() {
+      const tipoSelect = document.getElementById("tipo");
+      Object.keys(catalogo).forEach(t => {
+        tipoSelect.innerHTML += `<option value="${t}">${t}</option>`;
+      });
+    }
 
     const tipoSelect = document.getElementById("tipo");
     const configDiv = document.getElementById("config");
-    let seleccion = null;
+    const msgDiv = document.getElementById("msg");
+
+    tipoSelect.addEventListener("change", () => {
+      configDiv.innerHTML = "";
+      msgDiv.innerText = "";
+      seleccion = null;
+      if (tipoSelect.value) generarCampos(tipoSelect.value);
+    });
 
     function generarCampos(tipo) {
       const opciones = catalogo[tipo];
@@ -66,10 +91,9 @@
       opciones.forEach(opt => {
         html += `<option value="${opt.part}">${opt.part}</option>`;
       });
-      html += `<option value="noexist" disabled>No existe</option></select>`;
+      html += `</select>`;
 
-      // Campos dinámicos
-      const props = Object.keys(opciones[0]).filter(k => !["part","icon"].includes(k));
+      const props = Object.keys(opciones[0]).filter(k => !["part","icon","tipo"].includes(k));
       props.forEach(p => {
         html += `<label>${p}</label><select id="${p}Sel"><option value="">--</option>`;
         [...new Set(opciones.map(o => o[p]))].forEach(val => {
@@ -80,16 +104,16 @@
 
       configDiv.innerHTML = html;
 
-      // Selección de part number → llena props
-      document.getElementById("partSel").addEventListener("change", e => {
-        const val = e.target.value;
-        if (val && val !== "noexist") {
+      const partSel = document.getElementById("partSel");
+      partSel.addEventListener("change", () => {
+        const val = partSel.value;
+        if (val) {
           seleccion = opciones.find(o => o.part === val);
           props.forEach(p => document.getElementById(p+"Sel").value = seleccion[p] || "");
+          msgDiv.innerText = "";
         }
       });
 
-      // Selección de propiedades → busca part
       props.forEach(p => {
         document.getElementById(p+"Sel").addEventListener("change", () => {
           const filtros = {};
@@ -98,27 +122,22 @@
             if (v) filtros[pp] = v;
           });
           const filtrados = opciones.filter(o => Object.entries(filtros).every(([k,v]) => o[k]===v));
-
           if (filtrados.length === 1) {
             seleccion = filtrados[0];
-            document.getElementById("partSel").value = seleccion.part;
+            partSel.value = seleccion.part;
+            msgDiv.innerText = "";
           } else {
             seleccion = null;
-            document.getElementById("partSel").value = "noexist";
+            partSel.value = "";
+            msgDiv.innerText = "⚠️ No existe esa combinación en catálogo";
           }
         });
       });
     }
 
-    tipoSelect.addEventListener("change", () => {
-      configDiv.innerHTML = "";
-      seleccion = null;
-      if (tipoSelect.value) generarCampos(tipoSelect.value);
-    });
-
     // Insertar icono en canvas
     document.getElementById("btnInsert").addEventListener("click", () => {
-      if (!seleccion) return alert("Combinación inválida o no existe en catálogo");
+      if (!seleccion) return alert("Seleccione un componente válido");
       fabric.Image.fromURL(seleccion.icon, function(img) {
         img.set({ left:100, top:100, scaleX:0.3, scaleY:0.3 });
         img.metadata = seleccion;
