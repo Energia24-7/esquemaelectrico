@@ -2,12 +2,18 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Catálogo desde Google Sheets</title>
+  <title>Diseño Tableros Eléctricos</title>
   <style>
     body { display:flex; margin:0; font-family:sans-serif; height:100vh; }
     #sidebar { width:300px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
-    #canvas-container { flex:1; }
-    select, button { width:100%; padding:5px; margin:5px 0; }
+    #canvas-container { flex:1; position:relative; }
+    #c { border:1px solid #ccc; background-color:white; }
+    #zoomControls {
+      position:absolute; top:10px; right:10px;
+      background:#fff; border:1px solid #ccc; border-radius:5px;
+      padding:5px; display:flex; gap:5px;
+    }
+    button, select { padding:5px; margin:3px 0; width:100%; }
     .error { color:red; font-weight:bold; margin-top:5px; }
   </style>
 </head>
@@ -22,7 +28,12 @@
   </div>
 
   <div id="canvas-container">
-    <canvas id="c" width="900" height="600" style="border:1px solid #ccc;"></canvas>
+    <canvas id="c" width="1200" height="800"></canvas>
+    <div id="zoomControls">
+      <button id="zoomIn">+</button>
+      <button id="zoomOut">-</button>
+      <button id="resetZoom">100%</button>
+    </div>
   </div>
 
   <!-- Fabric.js -->
@@ -31,14 +42,50 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
   <script>
-    const canvas = new fabric.Canvas('c');
-    let catalogo = {}; // Se cargará desde Google Sheets
+    const canvas = new fabric.Canvas('c', { selection: true });
+    let catalogo = {}; 
     let seleccion = null;
 
-    // URL de Google Sheets en formato CSV
+    // === GRID BACKGROUND ===
+    function drawGrid() {
+      const gridSize = 50;
+      const width = canvas.getWidth();
+      const height = canvas.getHeight();
+      const gridLines = [];
+
+      for (let i = 0; i < width / gridSize; i++) {
+        gridLines.push(new fabric.Line([ i*gridSize, 0, i*gridSize, height], {
+          stroke: '#eee', selectable: false, evented: false
+        }));
+      }
+      for (let j = 0; j < height / gridSize; j++) {
+        gridLines.push(new fabric.Line([ 0, j*gridSize, width, j*gridSize], {
+          stroke: '#eee', selectable: false, evented: false
+        }));
+      }
+      const gridGroup = new fabric.Group(gridLines, { selectable: false, evented: false });
+      canvas.add(gridGroup);
+      gridGroup.sendToBack();
+    }
+    drawGrid();
+
+    // === ZOOM ===
+    let zoomLevel = 1;
+    document.getElementById("zoomIn").onclick = () => setZoom(zoomLevel * 1.2);
+    document.getElementById("zoomOut").onclick = () => setZoom(zoomLevel / 1.2);
+    document.getElementById("resetZoom").onclick = () => setZoom(1);
+
+    function setZoom(z) {
+      zoomLevel = z;
+      canvas.setZoom(zoomLevel);
+      canvas.setWidth(1200 * zoomLevel);
+      canvas.setHeight(800 * zoomLevel);
+      canvas.renderAll();
+    }
+
+    // URL del Google Sheet (CSV publicado)
     const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2Bqb-E25bu5MSBfQ-Kdea4O_Xs3DiUbc03OBAa_O66zkMfkOztfqs9KnSRU47FR0TLvFlqV9E6eyx/pub?output=csv";
 
-    // Leer datos con PapaParse
     Papa.parse(sheetUrl, {
       download: true,
       header: true,
@@ -49,16 +96,12 @@
     });
 
     function procesarCatalogo(data) {
-      // Agrupar por tipo
       const obj = {};
       data.forEach(row => {
+        if (!row.tipo) return;
         const tipo = row.tipo.toLowerCase();
         if (!obj[tipo]) obj[tipo] = [];
-        obj[tipo].push({
-          part: row.part,
-          icon: row.icon,
-          ...row
-        });
+        obj[tipo].push({ ...row });
       });
       return obj;
     }
@@ -135,17 +178,23 @@
       });
     }
 
-    // Insertar icono en canvas
+    // Insertar icono
     document.getElementById("btnInsert").addEventListener("click", () => {
       if (!seleccion) return alert("Seleccione un componente válido");
+      if (!seleccion.icon) return alert("No hay icono definido en la hoja");
+
       fabric.Image.fromURL(seleccion.icon, function(img) {
-        img.set({ left:100, top:100, scaleX:0.3, scaleY:0.3 });
+        if (!img) {
+          alert("No se pudo cargar el icono");
+          return;
+        }
+        img.set({ left:100, top:100, scaleX:0.5, scaleY:0.5 });
         img.metadata = seleccion;
         canvas.add(img).setActiveObject(img);
       }, { crossOrigin: 'anonymous' });
     });
 
-    // Borrar con tecla Delete
+    // Delete key
     document.addEventListener("keydown", function(e) {
       if (e.key === "Delete" || e.key === "Backspace") {
         const active = canvas.getActiveObject();
