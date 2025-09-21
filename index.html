@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Diseño Tableros Eléctricos</title>
+  <title>Diseño de Tableros Eléctricos</title>
   <style>
     body { display:flex; margin:0; font-family:sans-serif; height:100vh; }
     #sidebar { width:300px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
@@ -178,20 +178,97 @@
       });
     }
 
-    // Insertar icono
-    document.getElementById("btnInsert").addEventListener("click", () => {
-      if (!seleccion) return alert("Seleccione un componente válido");
-      if (!seleccion.icon) return alert("No hay icono definido en la hoja");
+    // === FUNCIONES DE CARGA DE ICONOS ===
+    function loadImageElement(src, useCrossOrigin = true) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        if (useCrossOrigin) img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Error cargando: ' + src));
+        img.src = src;
+      });
+    }
 
-      fabric.Image.fromURL(seleccion.icon, function(img) {
-        if (!img) {
-          alert("No se pudo cargar el icono");
+    async function fetchBlob(url) {
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error('fetchBlob: HTTP ' + res.status);
+      return await res.blob();
+    }
+
+    document.getElementById("btnInsert").addEventListener("click", async () => {
+      if (!seleccion) {
+        return alert("Seleccione un componente válido antes de insertar.");
+      }
+      const url = (seleccion.icon || "").trim();
+      if (!url) return alert("No hay URL de icono para este elemento.");
+
+      function addFabricFromImageElement(imgEl, meta) {
+        const fImg = new fabric.Image(imgEl, { left: 100, top: 100 });
+        fImg.set({ scaleX: 0.3, scaleY: 0.3 });
+        fImg.metadata = meta;
+        canvas.add(fImg).setActiveObject(fImg);
+      }
+
+      const ext = url.split('?')[0].split('.').pop().toLowerCase();
+      try {
+        // Caso SVG
+        if (ext === 'svg') {
+          await new Promise((resolve, reject) => {
+            fabric.loadSVGFromURL(url, (objects, options) => {
+              if (!objects || objects.length === 0) return reject(new Error('SVG vacío'));
+              const svg = fabric.util.groupSVGElements(objects, options);
+              svg.set({ left: 100, top: 100, scaleX: 0.5, scaleY: 0.5 });
+              svg.metadata = seleccion;
+              canvas.add(svg).setActiveObject(svg);
+              resolve();
+            });
+          });
           return;
         }
-        img.set({ left:100, top:100, scaleX:0.5, scaleY:0.5 });
-        img.metadata = seleccion;
-        canvas.add(img).setActiveObject(img);
-      }, { crossOrigin: 'anonymous' });
+
+        // 1) intento normal con crossOrigin
+        try {
+          const imgEl = await loadImageElement(url, true);
+          addFabricFromImageElement(imgEl, seleccion);
+          return;
+        } catch (err1) { console.warn("crossOrigin falló:", err1); }
+
+        // 2) fetch -> blob
+        try {
+          const blob = await fetchBlob(url);
+          const objectUrl = URL.createObjectURL(blob);
+          const imgEl2 = await loadImageElement(objectUrl, false);
+          addFabricFromImageElement(imgEl2, seleccion);
+          URL.revokeObjectURL(objectUrl);
+          return;
+        } catch (err2) { console.warn("fetch blob falló:", err2); }
+
+        // 3) fallback proxy
+        try {
+          const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+          if (ext === 'svg') {
+            await new Promise((resolve, reject) => {
+              fabric.loadSVGFromURL(proxy, (objects, options) => {
+                if (!objects || objects.length === 0) return reject(new Error('SVG vacío (proxy)'));
+                const svg = fabric.util.groupSVGElements(objects, options);
+                svg.set({ left: 100, top: 100, scaleX: 0.5, scaleY: 0.5 });
+                svg.metadata = seleccion;
+                canvas.add(svg).setActiveObject(svg);
+                resolve();
+              });
+            });
+          } else {
+            const imgProxy = await loadImageElement(proxy, false);
+            addFabricFromImageElement(imgProxy, seleccion);
+          }
+          return;
+        } catch (err3) { console.warn("proxy falló:", err3); }
+
+        throw new Error("No se pudo cargar el icono desde la URL.");
+      } catch (finalErr) {
+        alert("⚠️ No se pudo insertar el icono.\nRevise que la URL sea pública (https) y con CORS habilitado.\nRecomendación: suba los iconos a GitHub (raw.githubusercontent.com) o a /icons en este proyecto.\n\nDetalles: " + finalErr.message);
+        console.error(finalErr);
+      }
     });
 
     // Delete key
