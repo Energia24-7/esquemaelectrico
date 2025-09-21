@@ -1,316 +1,97 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <title>Editor Tablero Eléctrico</title>
+  <meta charset="UTF-8">
+  <title>Catálogo Eléctrico</title>
   <style>
-    body { font-family: Arial, sans-serif; margin:0; display:flex; height:100vh; }
-    #sidebar { width: 240px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
+    body { display:flex; margin:0; font-family:sans-serif; height:100vh; }
+    #sidebar { width:260px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; }
     #canvas-container { flex:1; }
-    button { margin-top: 8px; width:100%; padding:6px; }
-    .symbol { padding:5px; border:1px solid #999; margin:5px 0; cursor:pointer; background:#fff; text-align:center; }
-    #props { margin-top:15px; border-top:1px solid #ccc; padding-top:10px; }
-    #props label { display:block; margin:5px 0 2px; }
-    #props input, #props select { width:100%; padding:4px; }
-    .prop-group { margin-bottom:8px; }
+    label { display:block; margin:5px 0 2px; }
+    select, input, button { width:100%; padding:5px; margin-bottom:10px; }
   </style>
 </head>
 <body>
-
   <div id="sidebar">
-    <h3>Símbolos</h3>
-    <div class="symbol" data-type="interruptor" data-part="SW1" data-mfg="ABB">Interruptor</div>
-    <div class="symbol" data-type="fusible" data-part="FU10A" data-mfg="Siemens">Fusible</div>
-    <div class="symbol" data-type="contacto" data-part="LC1-D09" data-mfg="Schneider">Contactor</div>
-    <hr>
-    <button id="drawLine">Dibujar Cable</button>
-    <button id="exportCsv">Exportar BOM (CSV)</button>
+    <h3>Insertar Componente</h3>
 
-    <!-- Panel de propiedades -->
-    <div id="props">
-      <h4>Propiedades</h4>
-      <div class="prop-group">
-        <label>Part Number</label>
-        <input type="text" id="propPart">
-      </div>
-      <div class="prop-group">
-        <label>Fabricante</label>
-        <input type="text" id="propMfg">
-      </div>
-      <div class="prop-group">
-        <label>Tipo</label>
-        <input type="text" id="propType" disabled>
-      </div>
+    <label>Tipo</label>
+    <select id="tipo">
+      <option value="">-- Seleccionar --</option>
+      <option value="interruptor">Interruptor</option>
+      <option value="fusible">Fusible</option>
+      <option value="contactor">Contactor</option>
+      <option value="cable">Cable</option>
+    </select>
 
-      <!-- Propiedades para cables -->
-      <div id="extraCable" style="display:none;">
-        <label>Calibre</label>
-        <select id="propCalibre">
-          <option value="1.5mm²">1.5mm²</option>
-          <option value="2.5mm²" selected>2.5mm²</option>
-          <option value="4mm²">4mm²</option>
-        </select>
-        <label>Color</label>
-        <select id="propColor">
-          <option value="AZUL">AZUL</option>
-          <option value="NEGRO">NEGRO</option>
-          <option value="ROJO">ROJO</option>
-          <option value="VERDE">VERDE</option>
-        </select>
-      </div>
+    <div id="config"></div>
 
-      <!-- Propiedades para interruptores -->
-      <div id="extraInterruptor" style="display:none;">
-        <label>Tipo</label>
-        <select id="propIntTipo">
-          <option value="Riel DIN">Riel DIN</option>
-          <option value="Caja Moldeada">Caja Moldeada</option>
-        </select>
-        <label>Frame</label>
-        <select id="propIntFrame">
-          <option value="150A">150A</option>
-          <option value="250A">250A</option>
-          <option value="400A">400A</option>
-          <option value="600A">600A</option>
-        </select>
-        <label>Polos</label>
-        <select id="propIntPolos">
-          <option value="1P">1P</option>
-          <option value="2P">2P</option>
-          <option value="3P">3P</option>
-          <option value="4P">4P</option>
-        </select>
-        <label>Icu (kA)</label>
-        <input type="number" id="propIntIcu" value="10">
-      </div>
-
-      <!-- Propiedades para fusibles -->
-      <div id="extraFusible" style="display:none;">
-        <label>Corriente nominal (A)</label>
-        <input type="number" id="propFusAmp" value="10">
-        <label>Tipo de portafusible</label>
-        <select id="propFusTipo">
-          <option value="NH">NH</option>
-          <option value="Cilíndrico">Cilíndrico</option>
-        </select>
-      </div>
-
-      <!-- Propiedades para contactores -->
-      <div id="extraContactor" style="display:none;">
-        <label>Corriente nominal (A)</label>
-        <input type="number" id="propContAmp" value="9">
-        <label>Bobina</label>
-        <select id="propContBobina">
-          <option value="220V AC">220V AC</option>
-          <option value="110V AC">110V AC</option>
-          <option value="24V DC">24V DC</option>
-        </select>
-      </div>
-
-      <button id="saveProps">Guardar</button>
-    </div>
+    <button id="btnInsert">Seleccionar</button>
   </div>
 
   <div id="canvas-container">
     <canvas id="c" width="900" height="600" style="border:1px solid #ccc;"></canvas>
   </div>
 
-  <!-- Fabric.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
-  <!-- SheetJS -->
-  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-
   <script>
     const canvas = new fabric.Canvas('c');
-    let drawingLine = false;
-    let line, lineStart;
-    let activeObj = null;
 
-    // Crear símbolo eléctrico
-    function createSymbol(label, options) {
-      const rect = new fabric.Rect({
-        width: 80, height: 40, fill: '#eee', stroke: '#333', strokeWidth: 2, rx: 5, ry: 5
+    // Catálogo con ejemplos (podría venir de un JSON externo o Google Sheets)
+    const catalogo = {
+      interruptor: [
+        { part:"ABB-S202", tipo:"Riel DIN", frame:"150A", polos:"2P", icu:"10kA", icon:"icons/interruptor_din.png" },
+        { part:"ABB-TMAX250", tipo:"Caja Moldeada", frame:"250A", polos:"3P", icu:"25kA", icon:"icons/interruptor_mccb.png" }
+      ],
+      fusible: [
+        { part:"NH-63A", tipo:"NH", amp:"63A", icon:"icons/fusible_nh.png" },
+        { part:"CIL-10A", tipo:"Cilíndrico", amp:"10A", icon:"icons/fusible_cilindrico.png" }
+      ],
+      contactor: [
+        { part:"LC1D09", amp:"9A", bobina:"220V AC", icon:"icons/contactor.png" },
+        { part:"LC1D25", amp:"25A", bobina:"24V DC", icon:"icons/contactor.png" }
+      ]
+    };
+
+    const tipoSelect = document.getElementById("tipo");
+    const configDiv = document.getElementById("config");
+    let seleccion = null;
+
+    // Cargar configuraciones dinámicamente
+    tipoSelect.addEventListener("change", () => {
+      configDiv.innerHTML = "";
+      const tipo = tipoSelect.value;
+      if (!tipo) return;
+      const opciones = catalogo[tipo];
+      if (!opciones) return;
+
+      // PartNumber desplegable
+      let html = `<label>Part Number</label>
+                  <select id="partSel">`;
+      opciones.forEach(opt => {
+        html += `<option value="${opt.part}">${opt.part}</option>`;
       });
-      const text = new fabric.Text(label, { fontSize: 14, originX: 'center', originY: 'center' });
-      const group = new fabric.Group([rect, text], {
-        left: 100, top: 100, hasControls: true, hasBorders: true
-      });
-      group.metadata = options;
-      return group;
-    }
+      html += `</select>`;
 
-    // Insertar símbolos
-    document.querySelectorAll('.symbol').forEach(el => {
-      el.addEventListener('click', () => {
-        const label = el.innerText;
-        const opts = {
-          type: el.dataset.type,
-          partNumber: el.dataset.part,
-          manufacturer: el.dataset.mfg,
-          qty: 1
-        };
-        const symbol = createSymbol(label, opts);
-        canvas.add(symbol).setActiveObject(symbol);
+      configDiv.innerHTML = html;
+
+      // Guardar selección inicial
+      seleccion = opciones[0];
+
+      // Escuchar cambios en partNumber
+      document.getElementById("partSel").addEventListener("change", e => {
+        seleccion = opciones.find(o => o.part === e.target.value);
       });
     });
 
-    // Borrar con tecla Delete
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Delete" || e.key === "Backspace") {
-        const obj = canvas.getActiveObject();
-        if (obj) {
-          canvas.remove(obj);
-          canvas.discardActiveObject();
-          canvas.renderAll();
-        }
-      }
-    });
-
-    // Modo dibujo de cable
-    document.getElementById('drawLine').addEventListener('click', () => {
-      drawingLine = !drawingLine;
-      canvas.defaultCursor = drawingLine ? 'crosshair' : 'default';
-    });
-
-    canvas.on('mouse:down', function(o) {
-      if (!drawingLine) return;
-      const pointer = canvas.getPointer(o.e);
-      lineStart = { x: pointer.x, y: pointer.y };
-      line = new fabric.Line([lineStart.x, lineStart.y, lineStart.x, lineStart.y], {
-        stroke: 'blue', strokeWidth: 2, selectable: true
+    // Insertar en canvas
+    document.getElementById("btnInsert").addEventListener("click", () => {
+      if (!seleccion) return alert("Seleccione un componente");
+      fabric.Image.fromURL(seleccion.icon, function(img) {
+        img.set({ left:100, top:100, scaleX:0.5, scaleY:0.5 });
+        img.metadata = seleccion; // guardar info para BOM
+        canvas.add(img).setActiveObject(img);
       });
-      line.metadata = {
-        type: "cable",
-        partNumber: "CABLE-THHN-2.5",
-        manufacturer: "GENÉRICO",
-        calibre: "2.5mm²",
-        color: "AZUL",
-        qty: 0
-      };
-      canvas.add(line);
-    });
-
-    canvas.on('mouse:move', function(o) {
-      if (!drawingLine || !line) return;
-      const pointer = canvas.getPointer(o.e);
-      line.set({ x2: pointer.x, y2: pointer.y });
-      canvas.renderAll();
-    });
-
-    canvas.on('mouse:up', function(o) {
-      if (!drawingLine || !line) return;
-      const x1 = line.x1, y1 = line.y1, x2 = line.x2, y2 = line.y2;
-      const lengthPx = Math.sqrt(Math.pow(x2-x1,2) + Math.pow(y2-y1,2));
-      const scale = 0.01; // 1px = 1cm
-      line.metadata.qty = (lengthPx * scale).toFixed(2); // metros
-      line = null;
-    });
-
-    // Selección: cargar propiedades en el panel
-    canvas.on('selection:created', loadProps);
-    canvas.on('selection:updated', loadProps);
-    canvas.on('selection:cleared', clearProps);
-
-    function clearProps() {
-      activeObj = null;
-      document.querySelectorAll("#props input, #props select").forEach(el => el.value = "");
-      document.querySelectorAll("#extraCable, #extraInterruptor, #extraFusible, #extraContactor")
-        .forEach(div => div.style.display = "none");
-    }
-
-    function loadProps(e) {
-      activeObj = e.selected[0];
-      if (!activeObj || !activeObj.metadata) return;
-      document.getElementById("propPart").value = activeObj.metadata.partNumber || "";
-      document.getElementById("propMfg").value = activeObj.metadata.manufacturer || "";
-      document.getElementById("propType").value = activeObj.metadata.type || "";
-
-      clearExtras();
-
-      if (activeObj.metadata.type === "cable") {
-        document.getElementById("extraCable").style.display = "block";
-        document.getElementById("propCalibre").value = activeObj.metadata.calibre;
-        document.getElementById("propColor").value = activeObj.metadata.color;
-      }
-      if (activeObj.metadata.type === "interruptor") {
-        document.getElementById("extraInterruptor").style.display = "block";
-        document.getElementById("propIntTipo").value = activeObj.metadata.intTipo || "Riel DIN";
-        document.getElementById("propIntFrame").value = activeObj.metadata.intFrame || "150A";
-        document.getElementById("propIntPolos").value = activeObj.metadata.intPolos || "3P";
-        document.getElementById("propIntIcu").value = activeObj.metadata.intIcu || 10;
-      }
-      if (activeObj.metadata.type === "fusible") {
-        document.getElementById("extraFusible").style.display = "block";
-        document.getElementById("propFusAmp").value = activeObj.metadata.fusAmp || 10;
-        document.getElementById("propFusTipo").value = activeObj.metadata.fusTipo || "NH";
-      }
-      if (activeObj.metadata.type === "contacto") {
-        document.getElementById("extraContactor").style.display = "block";
-        document.getElementById("propContAmp").value = activeObj.metadata.contAmp || 9;
-        document.getElementById("propContBobina").value = activeObj.metadata.contBobina || "220V AC";
-      }
-    }
-
-    function clearExtras() {
-      document.querySelectorAll("#extraCable, #extraInterruptor, #extraFusible, #extraContactor")
-        .forEach(div => div.style.display = "none");
-    }
-
-    // Guardar cambios
-    document.getElementById("saveProps").addEventListener("click", () => {
-      if (!activeObj || !activeObj.metadata) return;
-      activeObj.metadata.partNumber = document.getElementById("propPart").value;
-      activeObj.metadata.manufacturer = document.getElementById("propMfg").value;
-
-      if (activeObj.metadata.type === "cable") {
-        activeObj.metadata.calibre = document.getElementById("propCalibre").value;
-        activeObj.metadata.color = document.getElementById("propColor").value;
-      }
-      if (activeObj.metadata.type === "interruptor") {
-        activeObj.metadata.intTipo = document.getElementById("propIntTipo").value;
-        activeObj.metadata.intFrame = document.getElementById("propIntFrame").value;
-        activeObj.metadata.intPolos = document.getElementById("propIntPolos").value;
-        activeObj.metadata.intIcu = document.getElementById("propIntIcu").value;
-      }
-      if (activeObj.metadata.type === "fusible") {
-        activeObj.metadata.fusAmp = document.getElementById("propFusAmp").value;
-        activeObj.metadata.fusTipo = document.getElementById("propFusTipo").value;
-      }
-      if (activeObj.metadata.type === "contacto") {
-        activeObj.metadata.contAmp = document.getElementById("propContAmp").value;
-        activeObj.metadata.contBobina = document.getElementById("propContBobina").value;
-      }
-
-      canvas.renderAll();
-      alert("Propiedades actualizadas ✅");
-    });
-
-    // Exportar BOM
-    document.getElementById('exportCsv').addEventListener('click', () => {
-      const bom = {};
-      canvas.getObjects().forEach(obj => {
-        if (obj.metadata) {
-          const key = obj.metadata.partNumber;
-          if (!bom[key]) {
-            bom[key] = { ...obj.metadata, qty: 0 };
-          }
-          if (obj.metadata.type === "cable") {
-            bom[key].qty += parseFloat(obj.metadata.qty) || 0;
-          } else {
-            bom[key].qty += obj.metadata.qty || 1;
-          }
-        }
-      });
-      const rows = Object.values(bom);
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const csv = XLSX.utils.sheet_to_csv(ws);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "BOM.csv";
-      a.click();
-      URL.revokeObjectURL(url);
     });
   </script>
 </body>
