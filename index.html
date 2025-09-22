@@ -9,7 +9,7 @@
     #canvas-container { flex:1; position:relative; }
     #c { border:1px solid #ccc; background-color:white; }
     #zoomControls {
-      position:absolute; top:50px; right:10px;
+      position:absolute; top:10px; right:10px;
       background:#fff; border:1px solid #ccc; border-radius:5px;
       padding:5px; display:flex; gap:5px; z-index:10;
     }
@@ -24,19 +24,15 @@
     }
     #rightPanel.hidden { transform: translateX(100%); }
 
-    /* Toggle pequeño */
+    /* Toggle pequeño con texto vertical */
     #togglePanel {
       position:fixed; top:100px; right:0; z-index:20;
       background:#007bff; color:#fff; border:none;
       border-radius:4px 0 0 4px;
-      cursor:pointer; padding:5px; width:20px; height:40px;
-    }
-
-    /* BOM Button */
-    #bomButton {
-      position:fixed; top:10px; right:10px; z-index:20;
-      background:#28a745; color:#fff; border:none; padding:6px 14px;
-      border-radius:4px; cursor:pointer; font-weight:bold;
+      cursor:pointer; padding:5px; width:24px; height:100px;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      font-weight:bold;
     }
 
     /* BOM Modal */
@@ -45,10 +41,11 @@
       background:rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center;
     }
     #bomContent {
-      background:#fff; padding:20px; border-radius:8px; max-width:600px; width:90%;
+      background:#fff; padding:20px; border-radius:8px; max-width:700px; width:95%;
     }
     table { border-collapse:collapse; width:100%; margin-top:10px; }
     th, td { border:1px solid #ccc; padding:5px; text-align:left; }
+    tfoot td { font-weight:bold; }
   </style>
 </head>
 <body>
@@ -74,11 +71,9 @@
   <div id="rightPanel" class="hidden">
     <h3>Materiales Insertados</h3>
     <ul id="bomList"></ul>
+    <button id="bomButton">Ver BOM</button>
   </div>
-  <button id="togglePanel">◀</button>
-
-  <!-- BOM Button -->
-  <button id="bomButton">BOM</button>
+  <button id="togglePanel">TOTAL</button>
 
   <!-- Modal BOM -->
   <div id="bomModal">
@@ -86,9 +81,12 @@
       <h2>Bill of Materials</h2>
       <table id="bomTable">
         <thead>
-          <tr><th>Part</th><th>Características</th><th>Cantidad</th></tr>
+          <tr><th>Part</th><th>Características</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr>
         </thead>
         <tbody></tbody>
+        <tfoot>
+          <tr><td colspan="4">TOTAL</td><td id="totalCell">0</td></tr>
+        </tfoot>
       </table>
       <button onclick="exportBOM()">Exportar a Excel (CSV)</button>
       <button onclick="document.getElementById('bomModal').style.display='none'">Cerrar</button>
@@ -208,8 +206,11 @@
     // BOM
     function addToBOM(item){
       const part=item.part;
-      const caracteristicas=Object.entries(item).filter(([k,v])=>!["part","icon","tipo"].includes(k)).map(([k,v])=>`${k}:${v}`).join(", ");
-      if(!bomData[part])bomData[part]={caracteristicas,qty:0};
+      const caracteristicas=`tipo:${item.tipo}, ` +
+        Object.entries(item).filter(([k,v])=>!["part","icon","tipo","precio"].includes(k))
+        .map(([k,v])=>`${k}:${v}`).join(", ");
+      const precio=parseFloat(item.precio)||0;
+      if(!bomData[part])bomData[part]={caracteristicas,precio,qty:0};
       bomData[part].qty++;
       refreshBOMList();
     }
@@ -224,21 +225,35 @@
     function refreshBOMList(){
       const list=document.getElementById("bomList"); list.innerHTML="";
       Object.entries(bomData).forEach(([part,info])=>{
-        const li=document.createElement("li"); li.textContent=`${part} (x${info.qty})`; list.appendChild(li);
+        const li=document.createElement("li");
+        li.textContent=`${part} (x${info.qty})`;
+        list.appendChild(li);
       });
     }
+
     document.getElementById("bomButton").addEventListener("click",()=>{
       const tbody=document.querySelector("#bomTable tbody"); tbody.innerHTML="";
+      let total=0;
       Object.entries(bomData).forEach(([part,info])=>{
-        const tr=document.createElement("tr"); tr.innerHTML=`<td>${part}</td><td>${info.caracteristicas}</td><td>${info.qty}</td>`; tbody.appendChild(tr);
+        const subtotal=info.precio*info.qty;
+        total+=subtotal;
+        const tr=document.createElement("tr");
+        tr.innerHTML=`<td>${part}</td><td>${info.caracteristicas}</td><td>${info.qty}</td><td>${info.precio.toFixed(2)}</td><td>${subtotal.toFixed(2)}</td>`;
+        tbody.appendChild(tr);
       });
+      document.getElementById("totalCell").innerText=total.toFixed(2);
       document.getElementById("bomModal").style.display="flex";
     });
+
     function exportBOM(){
-      let csv="Part,Características,Cantidad\n";
+      let csv="Part,Características,Cantidad,Precio,Subtotal\n";
+      let total=0;
       Object.entries(bomData).forEach(([part,info])=>{
-        csv+=`${part},"${info.caracteristicas}",${info.qty}\n`;
+        const subtotal=info.precio*info.qty;
+        total+=subtotal;
+        csv+=`${part},"${info.caracteristicas}",${info.qty},${info.precio.toFixed(2)},${subtotal.toFixed(2)}\n`;
       });
+      csv+=`TOTAL,,,,${total.toFixed(2)}\n`;
       const blob=new Blob([csv],{type:"text/csv"});
       const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="BOM.csv"; a.click();
     }
@@ -248,10 +263,9 @@
     const toggleBtn=document.getElementById("togglePanel");
     toggleBtn.addEventListener("click",()=>{
       rightPanel.classList.toggle("hidden");
-      toggleBtn.textContent= rightPanel.classList.contains("hidden") ? "◀" : "▶";
     });
 
-    // Delete
+    // Delete y duplicar
     document.addEventListener("keydown",e=>{
       if(e.key==="Delete"||e.key==="Backspace"){
         const active=canvas.getActiveObject();
@@ -262,7 +276,6 @@
           canvas.requestRenderAll();
         }
       }
-      // Copiar/pegar duplicados con Ctrl+C / Ctrl+V
       if(e.ctrlKey && e.key==="c"){ canvas.copy=canvas.getActiveObject(); }
       if(e.ctrlKey && e.key==="v"){
         if(canvas.copy){
