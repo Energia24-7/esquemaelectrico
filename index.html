@@ -9,9 +9,9 @@
     #canvas-container { flex:1; position:relative; }
     #c { border:1px solid #ccc; background-color:white; }
     #zoomControls {
-      position:absolute; top:10px; right:10px;
+      position:absolute; top:50px; right:10px;
       background:#fff; border:1px solid #ccc; border-radius:5px;
-      padding:5px; display:flex; gap:5px;
+      padding:5px; display:flex; gap:5px; z-index:10;
     }
     button, select { padding:5px; margin:3px 0; width:100%; }
     .error { color:red; font-weight:bold; margin-top:5px; }
@@ -20,20 +20,26 @@
     #rightPanel {
       width:250px; background:#fafafa; border-left:1px solid #ccc;
       padding:10px; overflow-y:auto; transition: transform 0.3s ease;
+      position:relative;
     }
     #rightPanel.hidden { transform: translateX(100%); }
+
+    /* Toggle pequeño */
     #togglePanel {
-      position:absolute; top:10px; right:260px; z-index:10;
-      background:#007bff; color:#fff; border:none; border-radius:4px;
-      cursor:pointer; padding:5px 8px;
+      position:fixed; top:100px; right:0; z-index:20;
+      background:#007bff; color:#fff; border:none;
+      border-radius:4px 0 0 4px;
+      cursor:pointer; padding:5px; width:20px; height:40px;
+    }
+
+    /* BOM Button */
+    #bomButton {
+      position:fixed; top:10px; right:10px; z-index:20;
+      background:#28a745; color:#fff; border:none; padding:6px 14px;
+      border-radius:4px; cursor:pointer; font-weight:bold;
     }
 
     /* BOM Modal */
-    #bomButton {
-      position:absolute; top:10px; left:10px; z-index:10;
-      background:#28a745; color:#fff; border:none; padding:6px 12px;
-      border-radius:4px; cursor:pointer;
-    }
     #bomModal {
       position:fixed; top:0; left:0; width:100%; height:100%;
       background:rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center;
@@ -56,14 +62,12 @@
   </div>
 
   <div id="canvas-container">
-    <button id="bomButton">BOM</button>
     <canvas id="c" width="1200" height="800"></canvas>
     <div id="zoomControls">
       <button id="zoomIn">+</button>
       <button id="zoomOut">-</button>
       <button id="resetZoom">100%</button>
     </div>
-    <button id="togglePanel">▶</button>
   </div>
 
   <!-- Panel derecho -->
@@ -71,6 +75,10 @@
     <h3>Materiales Insertados</h3>
     <ul id="bomList"></ul>
   </div>
+  <button id="togglePanel">◀</button>
+
+  <!-- BOM Button -->
+  <button id="bomButton">BOM</button>
 
   <!-- Modal BOM -->
   <div id="bomModal">
@@ -124,7 +132,7 @@
     document.getElementById("resetZoom").onclick=()=>setZoom(1);
 
     // Google Sheets CSV
-    const sheetUrl="https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2Bqb-E25bu5MSBfQ-Kdea4O_Xs3DiUbc03OBAa_O66zkMfkOztfqs9KnSRU47FR0TLvFlqV9E6eyx/pub?output=csv"; // <-- reemplaza con tu CSV
+    const sheetUrl="TU_LINK_CSV"; // <-- reemplaza con tu CSV
     Papa.parse(sheetUrl,{download:true,header:true,complete:r=>{
       catalogo=procesarCatalogo(r.data); llenarTipos();
     }});
@@ -240,7 +248,7 @@
     const toggleBtn=document.getElementById("togglePanel");
     toggleBtn.addEventListener("click",()=>{
       rightPanel.classList.toggle("hidden");
-      toggleBtn.textContent= rightPanel.classList.contains("hidden") ? "▶" : "◀";
+      toggleBtn.textContent= rightPanel.classList.contains("hidden") ? "◀" : "▶";
     });
 
     // Delete
@@ -252,6 +260,17 @@
           canvas.remove(active);
           canvas.discardActiveObject();
           canvas.requestRenderAll();
+        }
+      }
+      // Copiar/pegar duplicados con Ctrl+C / Ctrl+V
+      if(e.ctrlKey && e.key==="c"){ canvas.copy=canvas.getActiveObject(); }
+      if(e.ctrlKey && e.key==="v"){
+        if(canvas.copy){
+          canvas.copy.clone(clone=>{
+            clone.set({ left:clone.left+20, top:clone.top+20 });
+            canvas.add(clone).setActiveObject(clone);
+            if(clone.metadata){ addToBOM(clone.metadata); }
+          });
         }
       }
     });
