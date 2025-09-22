@@ -132,7 +132,7 @@
     document.getElementById("resetZoom").onclick=()=>setZoom(1);
 
     // Google Sheets CSV
-    const sheetUrl="TU_LINK_CSV"; // <-- reemplaza con tu CSV
+    const sheetUrl="https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2Bqb-E25bu5MSBfQ-Kdea4O_Xs3DiUbc03OBAa_O66zkMfkOztfqs9KnSRU47FR0TLvFlqV9E6eyx/pub?output=csv"; // <-- reemplaza con tu CSV
     Papa.parse(sheetUrl,{download:true,header:true,complete:r=>{
       catalogo=procesarCatalogo(r.data); llenarTipos();
     }});
