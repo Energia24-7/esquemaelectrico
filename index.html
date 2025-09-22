@@ -4,16 +4,16 @@
   <meta charset="UTF-8">
   <title>Diseño de Tableros Eléctricos</title>
   <style>
-    body { display:flex; margin:0; font-family:sans-serif; height:100vh; }
+    body { display:flex; margin:0; font-family:sans-serif; height:100vh; flex-wrap:wrap; }
     #sidebar { width:300px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
-    #canvas-container { flex:1; position:relative; }
+    #canvas-container { flex:1; position:relative; min-width:300px; }
     #c { border:1px solid #ccc; background-color:white; }
     #zoomControls {
       position:absolute; top:10px; right:10px;
       background:#fff; border:1px solid #ccc; border-radius:5px;
       padding:5px; display:flex; gap:5px; z-index:10;
     }
-    button, select { padding:5px; margin:3px 0; width:100%; }
+    button, select, input { padding:5px; margin:3px 0; width:100%; box-sizing:border-box; }
     .error { color:red; font-weight:bold; margin-top:5px; }
 
     /* Panel derecho */
@@ -35,17 +35,26 @@
       font-weight:bold;
     }
 
-    /* BOM Modal */
-    #bomModal {
+    /* Modal Detalle */
+    #bomModal, #ofertaModal {
       position:fixed; top:0; left:0; width:100%; height:100%;
       background:rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center;
+      z-index:30;
     }
-    #bomContent {
-      background:#fff; padding:20px; border-radius:8px; max-width:700px; width:95%;
+    #bomContent, #ofertaContent {
+      background:#fff; padding:20px; border-radius:8px; max-width:700px; width:95%; max-height:90%; overflow-y:auto;
     }
     table { border-collapse:collapse; width:100%; margin-top:10px; }
     th, td { border:1px solid #ccc; padding:5px; text-align:left; }
     tfoot td { font-weight:bold; }
+
+    /* Responsive */
+    @media(max-width:768px){
+      body { flex-direction:column; }
+      #sidebar { width:100%; border-right:none; border-bottom:1px solid #ccc; }
+      #rightPanel { width:100%; border-left:none; border-top:1px solid #ccc; }
+      #togglePanel { top:auto; bottom:0; height:30px; width:100px; writing-mode:horizontal-tb; border-radius:4px 4px 0 0; }
+    }
   </style>
 </head>
 <body>
@@ -71,14 +80,14 @@
   <div id="rightPanel" class="hidden">
     <h3>Materiales Insertados</h3>
     <ul id="bomList"></ul>
-    <button id="bomButton">Ver BOM</button>
+    <button id="bomButton">Ver Detalle</button>
   </div>
   <button id="togglePanel">TOTAL</button>
 
-  <!-- Modal BOM -->
+  <!-- Modal Detalle -->
   <div id="bomModal">
     <div id="bomContent">
-      <h2>Bill of Materials</h2>
+      <h2>Detalle de Materiales</h2>
       <table id="bomTable">
         <thead>
           <tr><th>Part</th><th>Características</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr>
@@ -88,8 +97,24 @@
           <tr><td colspan="4">TOTAL</td><td id="totalCell">0</td></tr>
         </tfoot>
       </table>
-      <button onclick="exportBOM()">Exportar a Excel (CSV)</button>
+      <button id="crearOferta">Crear oferta?</button>
+      <button onclick="exportDetalle()">Exportar a Excel (CSV)</button>
       <button onclick="document.getElementById('bomModal').style.display='none'">Cerrar</button>
+    </div>
+  </div>
+
+  <!-- Modal Oferta -->
+  <div id="ofertaModal">
+    <div id="ofertaContent">
+      <h2>Datos del Cliente</h2>
+      <label>Nombre</label><input id="cliNombre">
+      <label>Contacto</label><input id="cliContacto">
+      <label>Correo</label><input id="cliCorreo">
+      <label>Teléfono</label><input id="cliTelefono">
+      <label>Referencia</label><input id="cliRef">
+      <br><br>
+      <button onclick="generarPDF()">Generar PDF</button>
+      <button onclick="document.getElementById('ofertaModal').style.display='none'">Cancelar</button>
     </div>
   </div>
 
@@ -97,6 +122,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
   <!-- PapaParse -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <script>
     const canvas = new fabric.Canvas('c', { selection: true });
@@ -105,188 +132,115 @@
     let bomData = {};
 
     // GRID
-    function drawGrid() {
-      const gridSize = 50;
-      const width = canvas.getWidth();
-      const height = canvas.getHeight();
-      const gridLines = [];
-      for (let i=0;i<width/gridSize;i++) {
-        gridLines.push(new fabric.Line([i*gridSize,0,i*gridSize,height],{stroke:'#eee',selectable:false,evented:false}));
-      }
-      for (let j=0;j<height/gridSize;j++) {
-        gridLines.push(new fabric.Line([0,j*gridSize,width,j*gridSize],{stroke:'#eee',selectable:false,evented:false}));
-      }
-      const gridGroup = new fabric.Group(gridLines,{selectable:false,evented:false});
-      canvas.add(gridGroup);
-      gridGroup.sendToBack();
+    function drawGrid(){
+      const gridSize=50;
+      const w=canvas.getWidth(),h=canvas.getHeight();
+      const lines=[];
+      for(let i=0;i<w/gridSize;i++) lines.push(new fabric.Line([i*gridSize,0,i*gridSize,h],{stroke:'#eee',selectable:false,evented:false}));
+      for(let j=0;j<h/gridSize;j++) lines.push(new fabric.Line([0,j*gridSize,w,j*gridSize],{stroke:'#eee',selectable:false,evented:false}));
+      const grid=new fabric.Group(lines,{selectable:false,evented:false});
+      canvas.add(grid); grid.sendToBack();
     }
     drawGrid();
 
     // ZOOM
-    let zoomLevel = 1;
-    function setZoom(z){ zoomLevel=z; canvas.setZoom(z); canvas.renderAll(); }
+    let zoomLevel=1;
+    function setZoom(z){zoomLevel=z;canvas.setZoom(z);canvas.renderAll();}
     document.getElementById("zoomIn").onclick=()=>setZoom(zoomLevel*1.2);
     document.getElementById("zoomOut").onclick=()=>setZoom(zoomLevel/1.2);
     document.getElementById("resetZoom").onclick=()=>setZoom(1);
 
     // Google Sheets CSV
-    const sheetUrl="https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2Bqb-E25bu5MSBfQ-Kdea4O_Xs3DiUbc03OBAa_O66zkMfkOztfqs9KnSRU47FR0TLvFlqV9E6eyx/pub?output=csv"; // <-- reemplaza con tu CSV
-    Papa.parse(sheetUrl,{download:true,header:true,complete:r=>{
-      catalogo=procesarCatalogo(r.data); llenarTipos();
-    }});
+    const sheetUrl="TU_LINK_CSV"; // <-- reemplaza con tu CSV
+    Papa.parse(sheetUrl,{download:true,header:true,complete:r=>{catalogo=procesarCatalogo(r.data);llenarTipos();}});
     function procesarCatalogo(data){
-      const obj={};
-      data.forEach(row=>{
-        if(!row.tipo)return;
-        const tipo=row.tipo.toLowerCase();
-        if(!obj[tipo])obj[tipo]=[];
-        obj[tipo].push({...row});
-      });
-      return obj;
+      const obj={}; data.forEach(row=>{if(!row.tipo)return;const t=row.tipo.toLowerCase();if(!obj[t])obj[t]=[];obj[t].push({...row});});return obj;
     }
     function llenarTipos(){
-      const tipoSelect=document.getElementById("tipo");
-      Object.keys(catalogo).forEach(t=>{
-        tipoSelect.innerHTML+=`<option value="${t}">${t}</option>`;
-      });
+      const sel=document.getElementById("tipo");
+      Object.keys(catalogo).forEach(t=>{sel.innerHTML+=`<option value="${t}">${t}</option>`;});
     }
 
     // Config dinámico
-    const tipoSelect=document.getElementById("tipo");
-    const configDiv=document.getElementById("config");
-    const msgDiv=document.getElementById("msg");
-    tipoSelect.addEventListener("change",()=>{
-      configDiv.innerHTML=""; msgDiv.innerText=""; seleccion=null;
-      if(tipoSelect.value) generarCampos(tipoSelect.value);
-    });
+    const tipoSelect=document.getElementById("tipo"),configDiv=document.getElementById("config"),msgDiv=document.getElementById("msg");
+    tipoSelect.addEventListener("change",()=>{configDiv.innerHTML="";msgDiv.innerText="";seleccion=null;if(tipoSelect.value)generarCampos(tipoSelect.value);});
     function generarCampos(tipo){
       const opciones=catalogo[tipo]; if(!opciones)return;
       let html=`<label>Part Number</label><select id="partSel"><option value="">-- Elegir --</option>`;
-      opciones.forEach(opt=>{html+=`<option value="${opt.part}">${opt.part}</option>`;});
-      html+=`</select>`;
+      opciones.forEach(opt=>{html+=`<option value="${opt.part}">${opt.part}</option>`;}); html+=`</select>`;
       const props=Object.keys(opciones[0]).filter(k=>!["part","icon","tipo"].includes(k));
       props.forEach(p=>{
         html+=`<label>${p}</label><select id="${p}Sel"><option value="">--</option>`;
-        [...new Set(opciones.map(o=>o[p]))].forEach(val=>{html+=`<option value="${val}">${val}</option>`;});
+        [...new Set(opciones.map(o=>o[p]))].forEach(v=>{html+=`<option value="${v}">${v}</option>`;});
         html+=`</select>`;
       });
       configDiv.innerHTML=html;
       const partSel=document.getElementById("partSel");
-      partSel.addEventListener("change",()=>{
-        const val=partSel.value;
-        if(val){seleccion=opciones.find(o=>o.part===val); props.forEach(p=>document.getElementById(p+"Sel").value=seleccion[p]||""); msgDiv.innerText="";}
-      });
-      props.forEach(p=>{
-        document.getElementById(p+"Sel").addEventListener("change",()=>{
-          const filtros={}; props.forEach(pp=>{const v=document.getElementById(pp+"Sel").value;if(v)filtros[pp]=v;});
-          const filtrados=opciones.filter(o=>Object.entries(filtros).every(([k,v])=>o[k]===v));
-          if(filtrados.length===1){seleccion=filtrados[0]; partSel.value=seleccion.part; msgDiv.innerText="";}
-          else{seleccion=null; partSel.value=""; msgDiv.innerText="⚠️ No existe esa combinación en catálogo";}
-        });
-      });
+      partSel.addEventListener("change",()=>{const val=partSel.value;if(val){seleccion=opciones.find(o=>o.part===val);props.forEach(p=>document.getElementById(p+"Sel").value=seleccion[p]||"");msgDiv.innerText="";}});
+      props.forEach(p=>{document.getElementById(p+"Sel").addEventListener("change",()=>{const filtros={};props.forEach(pp=>{const v=document.getElementById(pp+"Sel").value;if(v)filtros[pp]=v;});const f=opciones.filter(o=>Object.entries(filtros).every(([k,v])=>o[k]===v));if(f.length===1){seleccion=f[0];partSel.value=seleccion.part;msgDiv.innerText="";}else{seleccion=null;partSel.value="";msgDiv.innerText="⚠️ No existe esa combinación";}});});
     }
 
     // Insertar íconos
-    function loadImageElement(src,useCrossOrigin=true){
-      return new Promise((res,rej)=>{const img=new Image(); if(useCrossOrigin)img.crossOrigin="anonymous";
-        img.onload=()=>res(img); img.onerror=()=>rej(new Error("Error cargando:"+src)); img.src=src;});
-    }
+    function loadImage(src){return new Promise((res,rej)=>{const i=new Image();i.crossOrigin="anonymous";i.onload=()=>res(i);i.onerror=()=>rej();i.src=src;});}
     document.getElementById("btnInsert").addEventListener("click",async()=>{
       if(!seleccion)return alert("Seleccione un componente válido.");
       const url=(seleccion.icon||"").trim(); if(!url)return alert("No hay URL de icono.");
-      try{
-        const imgEl=await loadImageElement(url,true);
-        const fImg=new fabric.Image(imgEl,{left:100,top:100,scaleX:0.3,scaleY:0.3});
-        fImg.metadata=seleccion;
-        canvas.add(fImg).setActiveObject(fImg);
-        addToBOM(seleccion);
-      }catch(err){alert("Error cargando icono: "+err.message);}
+      try{const img=await loadImage(url);const fImg=new fabric.Image(img,{left:100,top:100,scaleX:0.3,scaleY:0.3});fImg.metadata=seleccion;canvas.add(fImg).setActiveObject(fImg);addToBOM(seleccion);}catch{alert("Error cargando icono.");}
     });
 
     // BOM
     function addToBOM(item){
       const part=item.part;
-      const caracteristicas=`tipo:${item.tipo}, ` +
-        Object.entries(item).filter(([k,v])=>!["part","icon","tipo","precio"].includes(k))
-        .map(([k,v])=>`${k}:${v}`).join(", ");
+      const caracteristicas=`tipo:${item.tipo}, `+Object.entries(item).filter(([k])=>!["part","icon","tipo","precio"].includes(k)).map(([k,v])=>`${k}:${v}`).join(", ");
       const precio=parseFloat(item.precio)||0;
       if(!bomData[part])bomData[part]={caracteristicas,precio,qty:0};
-      bomData[part].qty++;
-      refreshBOMList();
+      bomData[part].qty++; refreshBOMList();
     }
-    function removeFromBOM(item){
-      const part=item.part;
-      if(bomData[part]){
-        bomData[part].qty--;
-        if(bomData[part].qty<=0) delete bomData[part];
-        refreshBOMList();
-      }
-    }
-    function refreshBOMList(){
-      const list=document.getElementById("bomList"); list.innerHTML="";
-      Object.entries(bomData).forEach(([part,info])=>{
-        const li=document.createElement("li");
-        li.textContent=`${part} (x${info.qty})`;
-        list.appendChild(li);
-      });
-    }
+    function removeFromBOM(item){const p=item.part;if(bomData[p]){bomData[p].qty--;if(bomData[p].qty<=0)delete bomData[p];refreshBOMList();}}
+    function refreshBOMList(){const list=document.getElementById("bomList");list.innerHTML="";Object.entries(bomData).forEach(([p,i])=>{const li=document.createElement("li");li.textContent=`${p} (x${i.qty})`;list.appendChild(li);});}
 
     document.getElementById("bomButton").addEventListener("click",()=>{
-      const tbody=document.querySelector("#bomTable tbody"); tbody.innerHTML="";
-      let total=0;
-      Object.entries(bomData).forEach(([part,info])=>{
-        const subtotal=info.precio*info.qty;
-        total+=subtotal;
-        const tr=document.createElement("tr");
-        tr.innerHTML=`<td>${part}</td><td>${info.caracteristicas}</td><td>${info.qty}</td><td>${info.precio.toFixed(2)}</td><td>${subtotal.toFixed(2)}</td>`;
-        tbody.appendChild(tr);
-      });
-      document.getElementById("totalCell").innerText=total.toFixed(2);
-      document.getElementById("bomModal").style.display="flex";
+      const tbody=document.querySelector("#bomTable tbody");tbody.innerHTML="";let total=0;
+      Object.entries(bomData).forEach(([p,i])=>{const s=i.precio*i.qty;total+=s;const tr=document.createElement("tr");tr.innerHTML=`<td>${p}</td><td>${i.caracteristicas}</td><td>${i.qty}</td><td>${i.precio.toFixed(2)}</td><td>${s.toFixed(2)}</td>`;tbody.appendChild(tr);});
+      document.getElementById("totalCell").innerText=total.toFixed(2);document.getElementById("bomModal").style.display="flex";
     });
 
-    function exportBOM(){
-      let csv="Part,Características,Cantidad,Precio,Subtotal\n";
-      let total=0;
-      Object.entries(bomData).forEach(([part,info])=>{
-        const subtotal=info.precio*info.qty;
-        total+=subtotal;
-        csv+=`${part},"${info.caracteristicas}",${info.qty},${info.precio.toFixed(2)},${subtotal.toFixed(2)}\n`;
-      });
-      csv+=`TOTAL,,,,${total.toFixed(2)}\n`;
-      const blob=new Blob([csv],{type:"text/csv"});
-      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="BOM.csv"; a.click();
+    function exportDetalle(){let csv="Part,Características,Cantidad,Precio,Subtotal\n";let total=0;Object.entries(bomData).forEach(([p,i])=>{const s=i.precio*i.qty;total+=s;csv+=`${p},"${i.caracteristicas}",${i.qty},${i.precio.toFixed(2)},${s.toFixed(2)}\n`;});csv+=`TOTAL,,,,${total.toFixed(2)}\n`;const blob=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="Detalle.csv";a.click();}
+
+    // Oferta PDF
+    document.getElementById("crearOferta").addEventListener("click",()=>{document.getElementById("ofertaModal").style.display="flex";});
+    async function generarPDF(){
+      const { jsPDF } = window.jspdf; const doc=new jsPDF();
+      doc.setFontSize(14); doc.text("Oferta Comercial - Energia24-7",10,10);
+      doc.setFontSize(10);
+      doc.text("RUC: 1715486559",10,18);
+      doc.text("Dirección: Victor Mideros 39, Quito",10,24);
+      doc.text("Correo: fastindustrialsupply@gmail.com",10,30);
+
+      // Cliente
+      doc.setFontSize(12); doc.text("Cliente:",10,42); doc.setFontSize(10);
+      doc.text("Nombre: "+document.getElementById("cliNombre").value,10,50);
+      doc.text("Contacto: "+document.getElementById("cliContacto").value,10,56);
+      doc.text("Correo: "+document.getElementById("cliCorreo").value,10,62);
+      doc.text("Teléfono: "+document.getElementById("cliTelefono").value,10,68);
+      doc.text("Referencia: "+document.getElementById("cliRef").value,10,74);
+
+      // Detalle
+      let y=85;doc.setFontSize(12);doc.text("Detalle de Materiales",10,y);y+=6;
+      doc.setFontSize(9);doc.text("Part",10,y);doc.text("Características",40,y);doc.text("Cant",120,y);doc.text("Precio",140,y);doc.text("Subtotal",170,y);
+      y+=4;let total=0;
+      Object.entries(bomData).forEach(([p,i])=>{const s=i.precio*i.qty;total+=s;y+=6;doc.text(p,10,y);doc.text(i.caracteristicas.substring(0,60),40,y);doc.text(i.qty.toString(),120,y);doc.text(i.precio.toFixed(2),140,y);doc.text(s.toFixed(2),170,y);});
+      y+=10;const iva=total*0.15;
+      doc.setFontSize(11);doc.text("Subtotal: "+total.toFixed(2),140,y);y+=6;doc.text("IVA 15%: "+iva.toFixed(2),140,y);y+=6;doc.text("TOTAL: "+(total+iva).toFixed(2),140,y);
+
+      doc.save("Oferta_Energia24-7.pdf");document.getElementById("ofertaModal").style.display="none";
     }
 
-    // Panel toggle
-    const rightPanel=document.getElementById("rightPanel");
-    const toggleBtn=document.getElementById("togglePanel");
-    toggleBtn.addEventListener("click",()=>{
-      rightPanel.classList.toggle("hidden");
-    });
+    // Toggle panel
+    document.getElementById("togglePanel").addEventListener("click",()=>{document.getElementById("rightPanel").classList.toggle("hidden");});
 
-    // Delete y duplicar
-    document.addEventListener("keydown",e=>{
-      if(e.key==="Delete"||e.key==="Backspace"){
-        const active=canvas.getActiveObject();
-        if(active){
-          if(active.metadata){ removeFromBOM(active.metadata); }
-          canvas.remove(active);
-          canvas.discardActiveObject();
-          canvas.requestRenderAll();
-        }
-      }
-      if(e.ctrlKey && e.key==="c"){ canvas.copy=canvas.getActiveObject(); }
-      if(e.ctrlKey && e.key==="v"){
-        if(canvas.copy){
-          canvas.copy.clone(clone=>{
-            clone.set({ left:clone.left+20, top:clone.top+20 });
-            canvas.add(clone).setActiveObject(clone);
-            if(clone.metadata){ addToBOM(clone.metadata); }
-          });
-        }
-      }
-    });
+    // Delete
+    document.addEventListener("keydown",e=>{if(e.key==="Delete"||e.key==="Backspace"){const a=canvas.getActiveObject();if(a){if(a.metadata)removeFromBOM(a.metadata);canvas.remove(a);canvas.discardActiveObject();canvas.requestRenderAll();}}});
   </script>
 </body>
 </html>
