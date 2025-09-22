@@ -157,7 +157,7 @@
     resizeCanvas();
 
     // CSV
-    const sheetUrl="TU_LINK_CSV"; // reemplaza
+    const sheetUrl="https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2Bqb-E25bu5MSBfQ-Kdea4O_Xs3DiUbc03OBAa_O66zkMfkOztfqs9KnSRU47FR0TLvFlqV9E6eyx/pub?output=csv"; // reemplaza
     Papa.parse(sheetUrl,{download:true,header:true,complete:r=>{catalogo=procesar(r.data);llenarTipos();}});
     function procesar(data){const o={};data.forEach(row=>{if(!row.tipo)return;const t=row.tipo.toLowerCase();if(!o[t])o[t]=[];o[t].push({...row});});return o;}
     function llenarTipos(){const sel=document.getElementById("tipo");Object.keys(catalogo).forEach(t=>{sel.innerHTML+=`<option value="${t}">${t}</option>`;});}
