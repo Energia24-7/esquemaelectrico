@@ -13,14 +13,26 @@
       background:#fff; border:1px solid #ccc; border-radius:5px;
       padding:5px; display:flex; gap:5px;
     }
-    #bomButton {
-      position:absolute; top:10px; left:10px;
-      background:#007bff; color:#fff; border:none; padding:6px 12px;
-      border-radius:4px; cursor:pointer;
-    }
+    button, select { padding:5px; margin:3px 0; width:100%; }
+    .error { color:red; font-weight:bold; margin-top:5px; }
+
+    /* Panel derecho */
     #rightPanel {
       width:250px; background:#fafafa; border-left:1px solid #ccc;
       padding:10px; overflow-y:auto; transition: transform 0.3s ease;
+    }
+    #rightPanel.hidden { transform: translateX(100%); }
+    #togglePanel {
+      position:absolute; top:10px; right:260px; z-index:10;
+      background:#007bff; color:#fff; border:none; border-radius:4px;
+      cursor:pointer; padding:5px 8px;
+    }
+
+    /* BOM Modal */
+    #bomButton {
+      position:absolute; top:10px; left:10px; z-index:10;
+      background:#28a745; color:#fff; border:none; padding:6px 12px;
+      border-radius:4px; cursor:pointer;
     }
     #bomModal {
       position:fixed; top:0; left:0; width:100%; height:100%;
@@ -31,7 +43,6 @@
     }
     table { border-collapse:collapse; width:100%; margin-top:10px; }
     th, td { border:1px solid #ccc; padding:5px; text-align:left; }
-    .error { color:red; font-weight:bold; margin-top:5px; }
   </style>
 </head>
 <body>
@@ -46,15 +57,17 @@
 
   <div id="canvas-container">
     <button id="bomButton">BOM</button>
-    <canvas id="c" width="1000" height="800"></canvas>
+    <canvas id="c" width="1200" height="800"></canvas>
     <div id="zoomControls">
       <button id="zoomIn">+</button>
       <button id="zoomOut">-</button>
       <button id="resetZoom">100%</button>
     </div>
+    <button id="togglePanel">▶</button>
   </div>
 
-  <div id="rightPanel">
+  <!-- Panel derecho -->
+  <div id="rightPanel" class="hidden">
     <h3>Materiales Insertados</h3>
     <ul id="bomList"></ul>
   </div>
@@ -83,93 +96,165 @@
     const canvas = new fabric.Canvas('c', { selection: true });
     let catalogo = {}; 
     let seleccion = null;
-    let bomData = {}; // {part: {caracteristicas:"", qty:0}}
+    let bomData = {};
 
-    // === GRID ===
+    // GRID
     function drawGrid() {
       const gridSize = 50;
       const width = canvas.getWidth();
       const height = canvas.getHeight();
-      for (let i=0; i<width/gridSize; i++) {
-        canvas.add(new fabric.Line([i*gridSize,0,i*gridSize,height], {stroke:'#eee', selectable:false, evented:false}));
+      const gridLines = [];
+      for (let i=0;i<width/gridSize;i++) {
+        gridLines.push(new fabric.Line([i*gridSize,0,i*gridSize,height],{stroke:'#eee',selectable:false,evented:false}));
       }
-      for (let j=0; j<height/gridSize; j++) {
-        canvas.add(new fabric.Line([0,j*gridSize,width,j*gridSize], {stroke:'#eee', selectable:false, evented:false}));
+      for (let j=0;j<height/gridSize;j++) {
+        gridLines.push(new fabric.Line([0,j*gridSize,width,j*gridSize],{stroke:'#eee',selectable:false,evented:false}));
       }
-      canvas.sendToBack(canvas.item(0));
+      const gridGroup = new fabric.Group(gridLines,{selectable:false,evented:false});
+      canvas.add(gridGroup);
+      gridGroup.sendToBack();
     }
     drawGrid();
 
-    // === ZOOM ===
+    // ZOOM
     let zoomLevel = 1;
-    function setZoom(z) {
-      zoomLevel = z;
-      canvas.setZoom(zoomLevel);
-      canvas.renderAll();
-    }
-    document.getElementById("zoomIn").onclick = () => setZoom(zoomLevel * 1.2);
-    document.getElementById("zoomOut").onclick = () => setZoom(zoomLevel / 1.2);
-    document.getElementById("resetZoom").onclick = () => setZoom(1);
+    function setZoom(z){ zoomLevel=z; canvas.setZoom(z); canvas.renderAll(); }
+    document.getElementById("zoomIn").onclick=()=>setZoom(zoomLevel*1.2);
+    document.getElementById("zoomOut").onclick=()=>setZoom(zoomLevel/1.2);
+    document.getElementById("resetZoom").onclick=()=>setZoom(1);
 
-    // === GOOGLE SHEETS ===
-    const sheetUrl = "TU_LINK_CSV"; // <-- reemplaza con tu CSV publicado
-    Papa.parse(sheetUrl, {
-      download: true,
-      header: true,
-      complete: function(results) {
-        catalogo = procesarCatalogo(results.data);
-        llenarTipos();
-      }
-    });
-
-    function procesarCatalogo(data) {
-      const obj = {};
-      data.forEach(row => {
-        if (!row.tipo) return;
-        const tipo = row.tipo.toLowerCase();
-        if (!obj[tipo]) obj[tipo] = [];
+    // Google Sheets CSV
+    const sheetUrl="TU_LINK_CSV"; // <-- reemplaza con tu CSV
+    Papa.parse(sheetUrl,{download:true,header:true,complete:r=>{
+      catalogo=procesarCatalogo(r.data); llenarTipos();
+    }});
+    function procesarCatalogo(data){
+      const obj={};
+      data.forEach(row=>{
+        if(!row.tipo)return;
+        const tipo=row.tipo.toLowerCase();
+        if(!obj[tipo])obj[tipo]=[];
         obj[tipo].push({...row});
       });
       return obj;
     }
-
-    function llenarTipos() {
-      const tipoSelect = document.getElementById("tipo");
-      Object.keys(catalogo).forEach(t => {
-        tipoSelect.innerHTML += `<option value="${t}">${t}</option>`;
+    function llenarTipos(){
+      const tipoSelect=document.getElementById("tipo");
+      Object.keys(catalogo).forEach(t=>{
+        tipoSelect.innerHTML+=`<option value="${t}">${t}</option>`;
       });
     }
 
-    const tipoSelect = document.getElementById("tipo");
-    const configDiv = document.getElementById("config");
-    const msgDiv = document.getElementById("msg");
+    // Config dinámico
+    const tipoSelect=document.getElementById("tipo");
+    const configDiv=document.getElementById("config");
+    const msgDiv=document.getElementById("msg");
+    tipoSelect.addEventListener("change",()=>{
+      configDiv.innerHTML=""; msgDiv.innerText=""; seleccion=null;
+      if(tipoSelect.value) generarCampos(tipoSelect.value);
+    });
+    function generarCampos(tipo){
+      const opciones=catalogo[tipo]; if(!opciones)return;
+      let html=`<label>Part Number</label><select id="partSel"><option value="">-- Elegir --</option>`;
+      opciones.forEach(opt=>{html+=`<option value="${opt.part}">${opt.part}</option>`;});
+      html+=`</select>`;
+      const props=Object.keys(opciones[0]).filter(k=>!["part","icon","tipo"].includes(k));
+      props.forEach(p=>{
+        html+=`<label>${p}</label><select id="${p}Sel"><option value="">--</option>`;
+        [...new Set(opciones.map(o=>o[p]))].forEach(val=>{html+=`<option value="${val}">${val}</option>`;});
+        html+=`</select>`;
+      });
+      configDiv.innerHTML=html;
+      const partSel=document.getElementById("partSel");
+      partSel.addEventListener("change",()=>{
+        const val=partSel.value;
+        if(val){seleccion=opciones.find(o=>o.part===val); props.forEach(p=>document.getElementById(p+"Sel").value=seleccion[p]||""); msgDiv.innerText="";}
+      });
+      props.forEach(p=>{
+        document.getElementById(p+"Sel").addEventListener("change",()=>{
+          const filtros={}; props.forEach(pp=>{const v=document.getElementById(pp+"Sel").value;if(v)filtros[pp]=v;});
+          const filtrados=opciones.filter(o=>Object.entries(filtros).every(([k,v])=>o[k]===v));
+          if(filtrados.length===1){seleccion=filtrados[0]; partSel.value=seleccion.part; msgDiv.innerText="";}
+          else{seleccion=null; partSel.value=""; msgDiv.innerText="⚠️ No existe esa combinación en catálogo";}
+        });
+      });
+    }
 
-    tipoSelect.addEventListener("change", () => {
-      configDiv.innerHTML = "";
-      msgDiv.innerText = "";
-      seleccion = null;
-      if (tipoSelect.value) generarCampos(tipoSelect.value);
+    // Insertar íconos
+    function loadImageElement(src,useCrossOrigin=true){
+      return new Promise((res,rej)=>{const img=new Image(); if(useCrossOrigin)img.crossOrigin="anonymous";
+        img.onload=()=>res(img); img.onerror=()=>rej(new Error("Error cargando:"+src)); img.src=src;});
+    }
+    document.getElementById("btnInsert").addEventListener("click",async()=>{
+      if(!seleccion)return alert("Seleccione un componente válido.");
+      const url=(seleccion.icon||"").trim(); if(!url)return alert("No hay URL de icono.");
+      try{
+        const imgEl=await loadImageElement(url,true);
+        const fImg=new fabric.Image(imgEl,{left:100,top:100,scaleX:0.3,scaleY:0.3});
+        fImg.metadata=seleccion;
+        canvas.add(fImg).setActiveObject(fImg);
+        addToBOM(seleccion);
+      }catch(err){alert("Error cargando icono: "+err.message);}
     });
 
-    function generarCampos(tipo) {
-      const opciones = catalogo[tipo];
-      if (!opciones) return;
-
-      let html = `<label>Part Number</label>
-                  <select id="partSel">
-                    <option value="">-- Elegir --</option>`;
-      opciones.forEach(opt => {
-        html += `<option value="${opt.part}">${opt.part}</option>`;
+    // BOM
+    function addToBOM(item){
+      const part=item.part;
+      const caracteristicas=Object.entries(item).filter(([k,v])=>!["part","icon","tipo"].includes(k)).map(([k,v])=>`${k}:${v}`).join(", ");
+      if(!bomData[part])bomData[part]={caracteristicas,qty:0};
+      bomData[part].qty++;
+      refreshBOMList();
+    }
+    function removeFromBOM(item){
+      const part=item.part;
+      if(bomData[part]){
+        bomData[part].qty--;
+        if(bomData[part].qty<=0) delete bomData[part];
+        refreshBOMList();
+      }
+    }
+    function refreshBOMList(){
+      const list=document.getElementById("bomList"); list.innerHTML="";
+      Object.entries(bomData).forEach(([part,info])=>{
+        const li=document.createElement("li"); li.textContent=`${part} (x${info.qty})`; list.appendChild(li);
       });
-      html += `</select>`;
-
-      const props = Object.keys(opciones[0]).filter(k => !["part","icon","tipo"].includes(k));
-      props.forEach(p => {
-        html += `<label>${p}</label><select id="${p}Sel"><option value="">--</option>`;
-        [...new Set(opciones.map(o => o[p]))].forEach(val => {
-          html += `<option value="${val}">${val}</option>`;
-        });
-        html += `</select>`;
+    }
+    document.getElementById("bomButton").addEventListener("click",()=>{
+      const tbody=document.querySelector("#bomTable tbody"); tbody.innerHTML="";
+      Object.entries(bomData).forEach(([part,info])=>{
+        const tr=document.createElement("tr"); tr.innerHTML=`<td>${part}</td><td>${info.caracteristicas}</td><td>${info.qty}</td>`; tbody.appendChild(tr);
       });
+      document.getElementById("bomModal").style.display="flex";
+    });
+    function exportBOM(){
+      let csv="Part,Características,Cantidad\n";
+      Object.entries(bomData).forEach(([part,info])=>{
+        csv+=`${part},"${info.caracteristicas}",${info.qty}\n`;
+      });
+      const blob=new Blob([csv],{type:"text/csv"});
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="BOM.csv"; a.click();
+    }
 
-      configDiv
+    // Panel toggle
+    const rightPanel=document.getElementById("rightPanel");
+    const toggleBtn=document.getElementById("togglePanel");
+    toggleBtn.addEventListener("click",()=>{
+      rightPanel.classList.toggle("hidden");
+      toggleBtn.textContent= rightPanel.classList.contains("hidden") ? "▶" : "◀";
+    });
+
+    // Delete
+    document.addEventListener("keydown",e=>{
+      if(e.key==="Delete"||e.key==="Backspace"){
+        const active=canvas.getActiveObject();
+        if(active){
+          if(active.metadata){ removeFromBOM(active.metadata); }
+          canvas.remove(active);
+          canvas.discardActiveObject();
+          canvas.requestRenderAll();
+        }
+      }
+    });
+  </script>
+</body>
+</html>
