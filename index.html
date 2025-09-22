@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <title>Diseño de Tableros Eléctricos</title>
   <style>
-    body { display:flex; margin:0; font-family:sans-serif; height:100vh; flex-wrap:wrap; }
-    #sidebar { width:300px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; }
-    #canvas-container { flex:1; position:relative; min-width:300px; }
+    body { display:flex; flex-direction:column; margin:0; font-family:sans-serif; height:100vh; }
+    main { flex:1; display:flex; overflow-x:auto; } /* scroll horizontal en PC */
+    #sidebar { width:300px; background:#f4f4f4; padding:10px; border-right:1px solid #ccc; overflow-y:auto; flex-shrink:0; }
+    #canvas-container { flex:1; position:relative; min-width:600px; }
     #c { border:1px solid #ccc; background-color:white; }
     #zoomControls {
       position:absolute; top:10px; right:10px;
@@ -19,12 +20,12 @@
     /* Panel derecho */
     #rightPanel {
       width:250px; background:#fafafa; border-left:1px solid #ccc;
-      padding:10px; overflow-y:auto; transition: transform 0.3s ease;
-      position:relative;
+      padding:10px; overflow-y:auto; display:none;
+      flex-shrink:0;
     }
-    #rightPanel.hidden { transform: translateX(100%); }
+    #rightPanel.show { display:block; }
 
-    /* Toggle pequeño con texto vertical */
+    /* Toggle */
     #togglePanel {
       position:fixed; top:100px; right:0; z-index:20;
       background:#007bff; color:#fff; border:none;
@@ -35,7 +36,7 @@
       font-weight:bold;
     }
 
-    /* Modal Detalle */
+    /* Modal */
     #bomModal, #ofertaModal {
       position:fixed; top:0; left:0; width:100%; height:100%;
       background:rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center;
@@ -50,38 +51,46 @@
 
     /* Responsive */
     @media(max-width:768px){
-      body { flex-direction:column; }
+      main { flex-direction:column; }
       #sidebar { width:100%; border-right:none; border-bottom:1px solid #ccc; }
+      #canvas-container { min-width:100%; }
+      #c { width:100% !important; height:auto !important; }
       #rightPanel { width:100%; border-left:none; border-top:1px solid #ccc; }
-      #togglePanel { top:auto; bottom:0; height:30px; width:100px; writing-mode:horizontal-tb; border-radius:4px 4px 0 0; }
+      #togglePanel { top:auto; bottom:40px; height:30px; width:100px; writing-mode:horizontal-tb; border-radius:4px 4px 0 0; }
+    }
+
+    footer {
+      background:#f4f4f4; text-align:center; padding:5px;
+      border-top:1px solid #ccc; font-size:12px;
     }
   </style>
 </head>
 <body>
-  <div id="sidebar">
-    <h3>Catálogo Eléctrico</h3>
-    <label>Tipo</label>
-    <select id="tipo"><option value="">-- Seleccionar --</option></select>
-    <div id="config"></div>
-    <button id="btnInsert">Insertar</button>
-    <div id="msg" class="error"></div>
-  </div>
-
-  <div id="canvas-container">
-    <canvas id="c" width="1200" height="800"></canvas>
-    <div id="zoomControls">
-      <button id="zoomIn">+</button>
-      <button id="zoomOut">-</button>
-      <button id="resetZoom">100%</button>
+  <main>
+    <div id="sidebar">
+      <h3>Catálogo Eléctrico</h3>
+      <label>Tipo</label>
+      <select id="tipo"><option value="">-- Seleccionar --</option></select>
+      <div id="config"></div>
+      <button id="btnInsert">Insertar</button>
+      <div id="msg" class="error"></div>
     </div>
-  </div>
 
-  <!-- Panel derecho -->
-  <div id="rightPanel" class="hidden">
-    <h3>Materiales Insertados</h3>
-    <ul id="bomList"></ul>
-    <button id="bomButton">Ver Detalle</button>
-  </div>
+    <div id="canvas-container">
+      <canvas id="c" width="1200" height="800"></canvas>
+      <div id="zoomControls">
+        <button id="zoomIn">+</button>
+        <button id="zoomOut">-</button>
+        <button id="resetZoom">100%</button>
+      </div>
+    </div>
+
+    <div id="rightPanel">
+      <h3>Materiales Insertados</h3>
+      <ul id="bomList"></ul>
+      <button id="bomButton">Ver Detalle</button>
+    </div>
+  </main>
   <button id="togglePanel">TOTAL</button>
 
   <!-- Modal Detalle -->
@@ -118,29 +127,21 @@
     </div>
   </div>
 
-  <!-- Fabric.js -->
+  <footer>
+    Copyright 2025 - Andrés Cuadrado - 0998879869 - Quito - Ecuador
+  </footer>
+
+  <!-- Librerías -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
-  <!-- PapaParse -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <!-- jsPDF -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <script>
-    const canvas = new fabric.Canvas('c', { selection: true });
-    let catalogo = {}; 
-    let seleccion = null;
-    let bomData = {};
+    const canvas=new fabric.Canvas('c',{selection:true});
+    let catalogo={},seleccion=null,bomData={};
 
     // GRID
-    function drawGrid(){
-      const gridSize=50;
-      const w=canvas.getWidth(),h=canvas.getHeight();
-      const lines=[];
-      for(let i=0;i<w/gridSize;i++) lines.push(new fabric.Line([i*gridSize,0,i*gridSize,h],{stroke:'#eee',selectable:false,evented:false}));
-      for(let j=0;j<h/gridSize;j++) lines.push(new fabric.Line([0,j*gridSize,w,j*gridSize],{stroke:'#eee',selectable:false,evented:false}));
-      const grid=new fabric.Group(lines,{selectable:false,evented:false});
-      canvas.add(grid); grid.sendToBack();
-    }
+    function drawGrid(){const g=50,w=canvas.getWidth(),h=canvas.getHeight(),l=[];for(let i=0;i<w/g;i++)l.push(new fabric.Line([i*g,0,i*g,h],{stroke:'#eee',selectable:false,evented:false}));for(let j=0;j<h/g;j++)l.push(new fabric.Line([0,j*g,w,j*g],{stroke:'#eee',selectable:false,evented:false}));const grid=new fabric.Group(l,{selectable:false,evented:false});canvas.add(grid);grid.sendToBack();}
     drawGrid();
 
     // ZOOM
@@ -150,97 +151,47 @@
     document.getElementById("zoomOut").onclick=()=>setZoom(zoomLevel/1.2);
     document.getElementById("resetZoom").onclick=()=>setZoom(1);
 
-    // Google Sheets CSV
-    const sheetUrl="https://docs.google.com/spreadsheets/d/e/2PACX-1vQ2Bqb-E25bu5MSBfQ-Kdea4O_Xs3DiUbc03OBAa_O66zkMfkOztfqs9KnSRU47FR0TLvFlqV9E6eyx/pub?output=csv"; // <-- reemplaza con tu CSV
-    Papa.parse(sheetUrl,{download:true,header:true,complete:r=>{catalogo=procesarCatalogo(r.data);llenarTipos();}});
-    function procesarCatalogo(data){
-      const obj={}; data.forEach(row=>{if(!row.tipo)return;const t=row.tipo.toLowerCase();if(!obj[t])obj[t]=[];obj[t].push({...row});});return obj;
-    }
-    function llenarTipos(){
-      const sel=document.getElementById("tipo");
-      Object.keys(catalogo).forEach(t=>{sel.innerHTML+=`<option value="${t}">${t}</option>`;});
-    }
+    // Canvas responsivo
+    function resizeCanvas(){const container=document.getElementById("canvas-container");const w=container.clientWidth;const h=window.innerHeight*0.6;canvas.setWidth(w);canvas.setHeight(h);canvas.renderAll();}
+    window.addEventListener("resize",resizeCanvas);
+    resizeCanvas();
 
-    // Config dinámico
+    // CSV
+    const sheetUrl="TU_LINK_CSV"; // reemplaza
+    Papa.parse(sheetUrl,{download:true,header:true,complete:r=>{catalogo=procesar(r.data);llenarTipos();}});
+    function procesar(data){const o={};data.forEach(row=>{if(!row.tipo)return;const t=row.tipo.toLowerCase();if(!o[t])o[t]=[];o[t].push({...row});});return o;}
+    function llenarTipos(){const sel=document.getElementById("tipo");Object.keys(catalogo).forEach(t=>{sel.innerHTML+=`<option value="${t}">${t}</option>`;});}
+
+    // Config
     const tipoSelect=document.getElementById("tipo"),configDiv=document.getElementById("config"),msgDiv=document.getElementById("msg");
-    tipoSelect.addEventListener("change",()=>{configDiv.innerHTML="";msgDiv.innerText="";seleccion=null;if(tipoSelect.value)generarCampos(tipoSelect.value);});
-    function generarCampos(tipo){
-      const opciones=catalogo[tipo]; if(!opciones)return;
+    tipoSelect.addEventListener("change",()=>{configDiv.innerHTML="";msgDiv.innerText="";seleccion=null;if(tipoSelect.value)genCampos(tipoSelect.value);});
+    function genCampos(tipo){
+      const opciones=catalogo[tipo];if(!opciones)return;
       let html=`<label>Part Number</label><select id="partSel"><option value="">-- Elegir --</option>`;
-      opciones.forEach(opt=>{html+=`<option value="${opt.part}">${opt.part}</option>`;}); html+=`</select>`;
+      opciones.forEach(opt=>{html+=`<option value="${opt.part}">${opt.part}</option>`;});html+=`</select>`;
       const props=Object.keys(opciones[0]).filter(k=>!["part","icon","tipo"].includes(k));
-      props.forEach(p=>{
-        html+=`<label>${p}</label><select id="${p}Sel"><option value="">--</option>`;
-        [...new Set(opciones.map(o=>o[p]))].forEach(v=>{html+=`<option value="${v}">${v}</option>`;});
-        html+=`</select>`;
-      });
+      props.forEach(p=>{html+=`<label>${p}</label><select id="${p}Sel"><option value="">--</option>`;[...new Set(opciones.map(o=>o[p]))].forEach(v=>{html+=`<option value="${v}">${v}</option>`;});html+=`</select>`;});
       configDiv.innerHTML=html;
       const partSel=document.getElementById("partSel");
-      partSel.addEventListener("change",()=>{const val=partSel.value;if(val){seleccion=opciones.find(o=>o.part===val);props.forEach(p=>document.getElementById(p+"Sel").value=seleccion[p]||"");msgDiv.innerText="";}});
-      props.forEach(p=>{document.getElementById(p+"Sel").addEventListener("change",()=>{const filtros={};props.forEach(pp=>{const v=document.getElementById(pp+"Sel").value;if(v)filtros[pp]=v;});const f=opciones.filter(o=>Object.entries(filtros).every(([k,v])=>o[k]===v));if(f.length===1){seleccion=f[0];partSel.value=seleccion.part;msgDiv.innerText="";}else{seleccion=null;partSel.value="";msgDiv.innerText="⚠️ No existe esa combinación";}});});
+      partSel.addEventListener("change",()=>{const v=partSel.value;if(v){seleccion=opciones.find(o=>o.part===v);props.forEach(p=>document.getElementById(p+"Sel").value=seleccion[p]||"");msgDiv.innerText="";}});
     }
 
     // Insertar íconos
     function loadImage(src){return new Promise((res,rej)=>{const i=new Image();i.crossOrigin="anonymous";i.onload=()=>res(i);i.onerror=()=>rej();i.src=src;});}
-    document.getElementById("btnInsert").addEventListener("click",async()=>{
-      if(!seleccion)return alert("Seleccione un componente válido.");
-      const url=(seleccion.icon||"").trim(); if(!url)return alert("No hay URL de icono.");
-      try{const img=await loadImage(url);const fImg=new fabric.Image(img,{left:100,top:100,scaleX:0.3,scaleY:0.3});fImg.metadata=seleccion;canvas.add(fImg).setActiveObject(fImg);addToBOM(seleccion);}catch{alert("Error cargando icono.");}
-    });
+    document.getElementById("btnInsert").addEventListener("click",async()=>{if(!seleccion)return alert("Seleccione un componente válido.");const url=(seleccion.icon||"").trim();if(!url)return alert("No hay icono.");try{const img=await loadImage(url);const f=new fabric.Image(img,{left:100,top:100,scaleX:0.3,scaleY:0.3});f.metadata=seleccion;canvas.add(f).setActiveObject(f);addToBOM(seleccion);}catch{alert("Error cargando icono.");}});
 
     // BOM
-    function addToBOM(item){
-      const part=item.part;
-      const caracteristicas=`tipo:${item.tipo}, `+Object.entries(item).filter(([k])=>!["part","icon","tipo","precio"].includes(k)).map(([k,v])=>`${k}:${v}`).join(", ");
-      const precio=parseFloat(item.precio)||0;
-      if(!bomData[part])bomData[part]={caracteristicas,precio,qty:0};
-      bomData[part].qty++; refreshBOMList();
-    }
-    function removeFromBOM(item){const p=item.part;if(bomData[p]){bomData[p].qty--;if(bomData[p].qty<=0)delete bomData[p];refreshBOMList();}}
-    function refreshBOMList(){const list=document.getElementById("bomList");list.innerHTML="";Object.entries(bomData).forEach(([p,i])=>{const li=document.createElement("li");li.textContent=`${p} (x${i.qty})`;list.appendChild(li);});}
-
-    document.getElementById("bomButton").addEventListener("click",()=>{
-      const tbody=document.querySelector("#bomTable tbody");tbody.innerHTML="";let total=0;
-      Object.entries(bomData).forEach(([p,i])=>{const s=i.precio*i.qty;total+=s;const tr=document.createElement("tr");tr.innerHTML=`<td>${p}</td><td>${i.caracteristicas}</td><td>${i.qty}</td><td>${i.precio.toFixed(2)}</td><td>${s.toFixed(2)}</td>`;tbody.appendChild(tr);});
-      document.getElementById("totalCell").innerText=total.toFixed(2);document.getElementById("bomModal").style.display="flex";
-    });
-
-    function exportDetalle(){let csv="Part,Características,Cantidad,Precio,Subtotal\n";let total=0;Object.entries(bomData).forEach(([p,i])=>{const s=i.precio*i.qty;total+=s;csv+=`${p},"${i.caracteristicas}",${i.qty},${i.precio.toFixed(2)},${s.toFixed(2)}\n`;});csv+=`TOTAL,,,,${total.toFixed(2)}\n`;const blob=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="Detalle.csv";a.click();}
+    function addToBOM(item){const p=item.part;const car=`tipo:${item.tipo}, `+Object.entries(item).filter(([k])=>!["part","icon","tipo","precio"].includes(k)).map(([k,v])=>`${k}:${v}`).join(", ");const pr=parseFloat(item.precio)||0;if(!bomData[p])bomData[p]={caracteristicas:car,precio:pr,qty:0};bomData[p].qty++;refresh();}
+    function refresh(){const list=document.getElementById("bomList");list.innerHTML="";Object.entries(bomData).forEach(([p,i])=>{const li=document.createElement("li");li.textContent=`${p} (x${i.qty})`;list.appendChild(li);});}
+    document.getElementById("bomButton").addEventListener("click",()=>{const tb=document.querySelector("#bomTable tbody");tb.innerHTML="";let tot=0;Object.entries(bomData).forEach(([p,i])=>{const s=i.precio*i.qty;tot+=s;const tr=document.createElement("tr");tr.innerHTML=`<td>${p}</td><td>${i.caracteristicas}</td><td>${i.qty}</td><td>${i.precio.toFixed(2)}</td><td>${s.toFixed(2)}</td>`;tb.appendChild(tr);});document.getElementById("totalCell").innerText=tot.toFixed(2);document.getElementById("bomModal").style.display="flex";});
+    function exportDetalle(){let csv="Part,Características,Cantidad,Precio,Subtotal\n";let t=0;Object.entries(bomData).forEach(([p,i])=>{const s=i.precio*i.qty;t+=s;csv+=`${p},"${i.caracteristicas}",${i.qty},${i.precio.toFixed(2)},${s.toFixed(2)}\n`;});csv+=`TOTAL,,,,${t.toFixed(2)}\n`;const blob=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="Detalle.csv";a.click();}
 
     // Oferta PDF
     document.getElementById("crearOferta").addEventListener("click",()=>{document.getElementById("ofertaModal").style.display="flex";});
-    async function generarPDF(){
-      const { jsPDF } = window.jspdf; const doc=new jsPDF();
-      doc.setFontSize(14); doc.text("Oferta Comercial - Energia24-7",10,10);
-      doc.setFontSize(10);
-      doc.text("RUC: 1715486559",10,18);
-      doc.text("Dirección: Victor Mideros 39, Quito",10,24);
-      doc.text("Correo: fastindustrialsupply@gmail.com",10,30);
-
-      // Cliente
-      doc.setFontSize(12); doc.text("Cliente:",10,42); doc.setFontSize(10);
-      doc.text("Nombre: "+document.getElementById("cliNombre").value,10,50);
-      doc.text("Contacto: "+document.getElementById("cliContacto").value,10,56);
-      doc.text("Correo: "+document.getElementById("cliCorreo").value,10,62);
-      doc.text("Teléfono: "+document.getElementById("cliTelefono").value,10,68);
-      doc.text("Referencia: "+document.getElementById("cliRef").value,10,74);
-
-      // Detalle
-      let y=85;doc.setFontSize(12);doc.text("Detalle de Materiales",10,y);y+=6;
-      doc.setFontSize(9);doc.text("Part",10,y);doc.text("Características",40,y);doc.text("Cant",120,y);doc.text("Precio",140,y);doc.text("Subtotal",170,y);
-      y+=4;let total=0;
-      Object.entries(bomData).forEach(([p,i])=>{const s=i.precio*i.qty;total+=s;y+=6;doc.text(p,10,y);doc.text(i.caracteristicas.substring(0,60),40,y);doc.text(i.qty.toString(),120,y);doc.text(i.precio.toFixed(2),140,y);doc.text(s.toFixed(2),170,y);});
-      y+=10;const iva=total*0.15;
-      doc.setFontSize(11);doc.text("Subtotal: "+total.toFixed(2),140,y);y+=6;doc.text("IVA 15%: "+iva.toFixed(2),140,y);y+=6;doc.text("TOTAL: "+(total+iva).toFixed(2),140,y);
-
-      doc.save("Oferta_Energia24-7.pdf");document.getElementById("ofertaModal").style.display="none";
-    }
+    async function generarPDF(){const {jsPDF}=window.jspdf;const d=new jsPDF();d.setFontSize(14);d.text("Oferta Comercial - Energia24-7",10,10);d.setFontSize(10);d.text("RUC: 1715486559",10,18);d.text("Dirección: Victor Mideros 39, Quito",10,24);d.text("Correo: fastindustrialsupply@gmail.com",10,30);d.setFontSize(12);d.text("Cliente:",10,42);d.setFontSize(10);d.text("Nombre: "+document.getElementById("cliNombre").value,10,50);let y=60;d.text("Contacto: "+document.getElementById("cliContacto").value,10,y);y+=6;d.text("Correo: "+document.getElementById("cliCorreo").value,10,y);y+=6;d.text("Teléfono: "+document.getElementById("cliTelefono").value,10,y);y+=6;d.text("Referencia: "+document.getElementById("cliRef").value,10,y);y+=10;d.setFontSize(12);d.text("Detalle de Materiales",10,y);y+=6;d.setFontSize(9);d.text("Part",10,y);d.text("Características",40,y);d.text("Cant",120,y);d.text("Precio",140,y);d.text("Subtotal",170,y);y+=4;let tot=0;Object.entries(bomData).forEach(([p,i])=>{const s=i.precio*i.qty;tot+=s;y+=6;d.text(p,10,y);d.text(i.caracteristicas.substring(0,60),40,y);d.text(i.qty.toString(),120,y);d.text(i.precio.toFixed(2),140,y);d.text(s.toFixed(2),170,y);});y+=10;const iva=tot*0.15;d.setFontSize(11);d.text("Subtotal: "+tot.toFixed(2),140,y);y+=6;d.text("IVA 15%: "+iva.toFixed(2),140,y);y+=6;d.text("TOTAL: "+(tot+iva).toFixed(2),140,y);d.save("Oferta_Energia24-7.pdf");document.getElementById("ofertaModal").style.display="none";}
 
     // Toggle panel
-    document.getElementById("togglePanel").addEventListener("click",()=>{document.getElementById("rightPanel").classList.toggle("hidden");});
-
-    // Delete
-    document.addEventListener("keydown",e=>{if(e.key==="Delete"||e.key==="Backspace"){const a=canvas.getActiveObject();if(a){if(a.metadata)removeFromBOM(a.metadata);canvas.remove(a);canvas.discardActiveObject();canvas.requestRenderAll();}}});
+    document.getElementById("togglePanel").addEventListener("click",()=>{document.getElementById("rightPanel").classList.toggle("show");});
   </script>
 </body>
 </html>
